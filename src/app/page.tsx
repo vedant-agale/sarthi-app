@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
   Check, 
@@ -14,15 +14,14 @@ import {
   CheckCircle2, 
   AlertCircle,
   X,
-  Mail,
-  Briefcase,
-  Laptop,
-  Clock,
   Calendar,
+  Clock,
   History,
   Bell,
   RotateCcw,
-  Hourglass
+  Hourglass,
+  Edit3,
+  SlidersHorizontal
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -43,7 +42,6 @@ interface BannerNotification {
   type: 'success' | 'error' | 'info';
 }
 
-// 5 Mandatory Daily Routines
 const DEFAULT_ROUTINES = [
   { title: 'Naam Jap (108 Jap)', category: 'naam_jap' },
   { title: 'LeetCode Daily Challenge', category: 'leetcode' },
@@ -52,14 +50,35 @@ const DEFAULT_ROUTINES = [
   { title: 'Productive Deep Work', category: 'productive' },
 ];
 
+// Custom Categories for manual entry
+const MANUAL_CATEGORIES = [
+  { id: 'Personal', label: 'Personal' },
+  { id: 'Workout', label: 'Gym / Workout' },
+  { id: 'Study', label: 'Study' },
+  { id: 'Project', label: 'Project / Editing' },
+  { id: 'Urgent', label: 'Urgent Work' },
+];
+
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeTab, setActiveTab] = useState<'today' | 'upcoming' | 'history'>('today');
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [category, setCategory] = useState<string>('general');
-  const [dueTime, setDueTime] = useState('');
-  const [targetDate, setTargetDate] = useState(() => new Date().toISOString().split('T')[0]);
+  
+  // Dynamic Local Device Time & Date
+  const getDeviceDate = () => new Date().toISOString().split('T')[0];
+  const getDeviceTime = () => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
 
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [category, setCategory] = useState<string>('Personal');
+  const [targetDate, setTargetDate] = useState(getDeviceDate());
+  const [dueTime, setDueTime] = useState(getDeviceTime());
+
+  // Edit Modal State
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+
+  // Widget States
   const [japCount, setJapCount] = useState(0);
   const [leetcodeUsername, setLeetcodeUsername] = useState('vedant-agale');
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
@@ -67,7 +86,10 @@ export default function Home() {
   const [notificationsAllowed, setNotificationsAllowed] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Live Clock for Countdowns
+  // Swipe-to-delete tracking
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [swipedTaskId, setSwipedTaskId] = useState<string | null>(null);
+
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -83,48 +105,44 @@ export default function Home() {
       const permission = await Notification.requestPermission();
       if (permission === 'granted') {
         setNotificationsAllowed(true);
-        triggerBanner('Notifications Active', 'Time pe reminders milenge!', 'success');
+        triggerBanner('Alert Active', 'Reminders enable ho gaye!', 'success');
       }
     }
   };
 
-  // 1. Auto Daily Defaults & Carry Forward Engine
+  // Auto-routine process
   const processDailyLifecycle = async (allTasks: Task[]) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getDeviceDate();
 
-    // Carry forward unfinished tasks from previous dates
+    // Rollover unfinished tasks
     const overdueTasks = allTasks.filter(t => !t.is_completed && t.target_date < today);
     if (overdueTasks.length > 0) {
       for (const t of overdueTasks) {
         await supabase
           .from('tasks')
-          .update({ 
-            target_date: today, 
-            carry_forward_count: (t.carry_forward_count || 0) + 1 
-          })
+          .update({ target_date: today, carry_forward_count: (t.carry_forward_count || 0) + 1 })
           .eq('id', t.id);
       }
     }
 
-    // Auto-assign 5 Default Tasks if not already present for today
+    // Auto-create 5 Default tasks
     const todaysTasks = allTasks.filter(t => t.target_date === today);
     const missingDefaults = DEFAULT_ROUTINES.filter(
       def => !todaysTasks.some(t => t.title.toLowerCase().includes(def.title.toLowerCase().slice(0, 8)))
     );
 
     if (missingDefaults.length > 0) {
-      const newEntries = missingDefaults.map(def => ({
+      const entries = missingDefaults.map(def => ({
         title: def.title,
         category: def.category,
         target_date: today,
         is_completed: false,
         carry_forward_count: 0
       }));
-      await supabase.from('tasks').insert(newEntries);
+      await supabase.from('tasks').insert(entries);
     }
   };
 
-  // 2. Fetch Tasks with Supabase
   const fetchTasks = async () => {
     const { data } = await supabase.from('tasks').select('*').order('created_at', { ascending: false });
     if (data) {
@@ -133,26 +151,22 @@ export default function Home() {
     }
   };
 
-  // 3. Realtime Listener & 7 PM Notification Watcher
+  // Realtime WebSocket & Evening 7 PM Watcher
   useEffect(() => {
     fetchTasks();
-
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setNotificationsAllowed(Notification.permission === 'granted');
     }
 
-    // Supabase Realtime Channel
     const channel = supabase
       .channel('tasks-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-        // Kisi bhi device par change ho, turant reload hoga bina refresh kiye
         supabase.from('tasks').select('*').order('created_at', { ascending: false }).then(({ data }) => {
           if (data) setTasks(data);
         });
       })
       .subscribe();
 
-    // Routine & 7 PM Incomplete Tasks Notification Engine
     let alertedAt7PM = false;
     const interval = setInterval(() => {
       const now = new Date();
@@ -161,30 +175,26 @@ export default function Home() {
       const timeString = `${String(currentHours).padStart(2, '0')}:${String(currentMins).padStart(2, '0')}`;
       const today = now.toISOString().split('T')[0];
 
-      // Point 4: Shaam 7:00 PM Notification
       if (currentHours === 19 && currentMins === 0 && !alertedAt7PM) {
         const pendingCount = tasks.filter(t => t.target_date === today && !t.is_completed).length;
         if (pendingCount > 0) {
           if (Notification.permission === 'granted') {
-            new Notification('SARTHI: Shaam Ke 7 Baj Gaye! ⚠️', {
-              body: `Dhyan de! Aaj ke ${pendingCount} zaroori tasks abhi bhi baaki hain. Routine complete kar lo!`,
+            new Notification('SARTHI: Shaam ke 7 Baj Gaye! ⚠️', {
+              body: `Dhyan de! Aaj ke ${pendingCount} zaroori tasks pending hain. Complete karo!`,
             });
           }
-          triggerBanner('Evening Alert! ⚠️', `Aaj ke ${pendingCount} tasks pending hain. Nipta lo!`, 'error');
+          triggerBanner('Evening Alert! ⚠️', `${pendingCount} tasks bache hain!`, 'error');
         }
         alertedAt7PM = true;
       }
       if (currentHours !== 19) alertedAt7PM = false;
 
-      // Due time reminder
       tasks.forEach(task => {
         if (!task.is_completed && task.target_date === today && task.due_time === timeString) {
           if (Notification.permission === 'granted') {
-            new Notification('SARTHI Alert! 🔔', {
-              body: `Time ho gaya: "${task.title}" execute karo!`,
-            });
+            new Notification('SARTHI Alert! 🔔', { body: `Time ho gaya: "${task.title}"!` });
           }
-          triggerBanner('Scheduled Reminder ⏰', task.title, 'info');
+          triggerBanner('Reminder ⏰', task.title, 'info');
         }
       });
     }, 20000);
@@ -195,30 +205,61 @@ export default function Home() {
     };
   }, []);
 
-  // Add Task (Supports any date)
+  // 🟢 Add Task: Auto-fill category name if blank + current device time
   const addTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTaskTitle.trim()) {
-      triggerBanner('Error', 'Task ka naam daalna zaroori hai!', 'error');
-      return;
-    }
+    const finalTitle = newTaskTitle.trim() ? newTaskTitle.trim() : category;
 
     await supabase.from('tasks').insert([{ 
-      title: newTaskTitle.trim(), 
-      category,
+      title: finalTitle, 
+      category: category.toLowerCase().replace(/[^a-z0-9]/g, '_'),
       target_date: targetDate,
       due_time: dueTime || null
     }]);
 
     setNewTaskTitle('');
-    setDueTime('');
-    triggerBanner('Saved!', 'Task schedule me set kar diya gaya.', 'success');
+    setDueTime(getDeviceTime());
+    setTargetDate(getDeviceDate());
+    triggerBanner('Saved!', `"${finalTitle}" schedule ho gaya.`, 'success');
+  };
+
+  // Update Task Modal Action
+  const updateScheduledTask = async () => {
+    if (!editingTask) return;
+    await supabase.from('tasks').update({
+      title: editingTask.title,
+      target_date: editingTask.target_date,
+      due_time: editingTask.due_time
+    }).eq('id', editingTask.id);
+
+    setEditingTask(null);
+    triggerBanner('Updated!', 'Task details update ho gayi.', 'success');
   };
 
   // Delete Task
-  const deleteTask = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const deleteTask = async (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     await supabase.from('tasks').delete().eq('id', id);
+    setSwipedTaskId(null);
+    setEditingTask(null);
+    triggerBanner('Deleted', 'Task remove kar diya gaya.', 'info');
+  };
+
+  // Swipe Detection (Touch Event Handlers)
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (id: string, e: React.TouchEvent) => {
+    if (!touchStartX) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diffX = touchStartX - touchEndX;
+
+    // Swiped Left by > 75px
+    if (diffX > 75) {
+      deleteTask(id);
+    }
+    setTouchStartX(null);
   };
 
   // Toggle Complete
@@ -228,7 +269,7 @@ export default function Home() {
       return;
     }
     if (task.category === 'naam_jap' && !task.is_completed) {
-      triggerBanner('Naam Jap Lock', 'Pehle counter par 108 jap pure karein.', 'info');
+      triggerBanner('Naam Jap Lock', 'Pehle 108 dafa jap counter complete karein.', 'info');
       return;
     }
 
@@ -241,7 +282,7 @@ export default function Home() {
     }).eq('id', task.id);
   };
 
-  // LeetCode Verify
+  // LeetCode Verification via GraphQL route
   const verifyLeetCode = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setVerifyingId(taskId);
@@ -260,13 +301,13 @@ export default function Home() {
         triggerBanner('Not Found', data.message || 'Aaj koi fresh submission nahi mila.', 'error');
       }
     } catch {
-      triggerBanner('Network Error', 'LeetCode se check nahi ho saka.', 'error');
+      triggerBanner('Network Error', 'LeetCode se contact nahi ho saka.', 'error');
     } finally {
       setVerifyingId(null);
     }
   };
 
-  // 108 Jap Increment
+  // Naam Jap Increment
   const handleJapIncrement = async () => {
     const nextCount = japCount + 1;
     setJapCount(nextCount);
@@ -285,12 +326,12 @@ export default function Home() {
     }
   };
 
-  // Countdown Calculator for Future Tasks
+  // Countdown Helper
   const getCountdownString = (targetDateStr: string, dueTimeStr?: string | null) => {
     const target = new Date(`${targetDateStr}T${dueTimeStr || '00:00:00'}`);
     const diff = target.getTime() - currentTime.getTime();
 
-    if (diff <= 0) return 'Time reached';
+    if (diff <= 0) return 'Due Now';
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
     const mins = Math.floor((diff / 1000 / 60) % 60);
@@ -300,18 +341,18 @@ export default function Home() {
     return `${hours}h ${mins}m ${secs}s`;
   };
 
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const todayStr = useMemo(() => getDeviceDate(), []);
   const todayTasks = tasks.filter(t => t.target_date === todayStr);
   const upcomingTasks = tasks.filter(t => t.target_date > todayStr);
   const historyTasks = tasks.filter(t => t.is_completed);
 
   return (
-    <main className="min-h-screen bg-black text-white px-4 py-6 sm:py-10 max-w-md mx-auto font-sans antialiased overflow-x-hidden">
+    <main className="min-h-screen bg-black text-white px-4 py-6 sm:py-10 max-w-md mx-auto font-sans antialiased overflow-x-hidden select-none">
       
-      {/* 🟢 iOS Dynamic Island Floating Pill */}
+      {/* 🟢 iOS Floating Pill */}
       {banner && (
-        <div className="fixed top-4 inset-x-0 mx-auto max-w-xs px-4 z-50">
-          <div className="bg-neutral-900/95 backdrop-blur-2xl border border-white/10 rounded-3xl p-3.5 shadow-2xl flex items-center justify-between gap-3">
+        <div className="fixed top-4 inset-x-0 mx-auto max-w-xs px-4 z-50 animate-in fade-in slide-in-from-top-3">
+          <div className="bg-neutral-900/95 backdrop-blur-2xl border border-white/10 rounded-3xl p-3 shadow-2xl flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className={`p-2 rounded-2xl ${
                 banner.type === 'success' ? 'bg-emerald-500/20 text-emerald-400' :
@@ -324,7 +365,7 @@ export default function Home() {
               </div>
               <div>
                 <h4 className="text-xs font-semibold text-white tracking-wide">{banner.title}</h4>
-                <p className="text-[10px] text-neutral-400 leading-snug line-clamp-1">{banner.message}</p>
+                <p className="text-[10px] text-neutral-400 line-clamp-1">{banner.message}</p>
               </div>
             </div>
             <button onClick={() => setBanner(null)} className="p-1 text-neutral-500 hover:text-white">
@@ -334,8 +375,8 @@ export default function Home() {
         </div>
       )}
 
-      {/*  Header */}
-      <header className="flex justify-between items-center mb-6">
+      {/*  Top App Header */}
+      <header className="flex justify-between items-center mb-5">
         <div>
           <span className="text-[10px] font-bold tracking-widest uppercase text-amber-500">Autonomous Assistant</span>
           <h1 className="text-2xl font-black tracking-tight text-white">SARTHI</h1>
@@ -344,8 +385,8 @@ export default function Home() {
           {!notificationsAllowed && (
             <button 
               onClick={requestNotificationAccess}
-              className="bg-neutral-900 border border-white/10 p-2 rounded-full text-amber-400 hover:text-amber-300 active:scale-95 transition"
-              title="7 PM Reminders"
+              className="bg-neutral-900 border border-white/10 p-2 rounded-full text-amber-400 hover:text-amber-300"
+              title="7 PM Alerts"
             >
               <Bell className="w-4 h-4" />
             </button>
@@ -358,12 +399,12 @@ export default function Home() {
         </div>
       </header>
 
-      {/*  Top Navigation Segmented Switcher */}
-      <div className="grid grid-cols-3 bg-neutral-900/90 p-1 rounded-2xl border border-white/10 text-xs font-semibold mb-6">
+      {/*  iOS Tab Bar */}
+      <div className="grid grid-cols-3 bg-neutral-900/90 p-1 rounded-2xl border border-white/10 text-xs font-semibold mb-5">
         <button
           onClick={() => setActiveTab('today')}
           className={`py-2 rounded-xl transition flex items-center justify-center gap-1 ${
-            activeTab === 'today' ? 'bg-neutral-800 text-white shadow-sm' : 'text-neutral-400 hover:text-white'
+            activeTab === 'today' ? 'bg-neutral-800 text-white shadow-sm' : 'text-neutral-400'
           }`}
         >
           <Calendar className="w-3.5 h-3.5 text-amber-400" /> Today
@@ -371,7 +412,7 @@ export default function Home() {
         <button
           onClick={() => setActiveTab('upcoming')}
           className={`py-2 rounded-xl transition flex items-center justify-center gap-1 ${
-            activeTab === 'upcoming' ? 'bg-neutral-800 text-white shadow-sm' : 'text-neutral-400 hover:text-white'
+            activeTab === 'upcoming' ? 'bg-neutral-800 text-white shadow-sm' : 'text-neutral-400'
           }`}
         >
           <Hourglass className="w-3.5 h-3.5 text-indigo-400" /> Upcoming
@@ -379,18 +420,18 @@ export default function Home() {
         <button
           onClick={() => setActiveTab('history')}
           className={`py-2 rounded-xl transition flex items-center justify-center gap-1 ${
-            activeTab === 'history' ? 'bg-neutral-800 text-white shadow-sm' : 'text-neutral-400 hover:text-white'
+            activeTab === 'history' ? 'bg-neutral-800 text-white shadow-sm' : 'text-neutral-400'
           }`}
         >
           <History className="w-3.5 h-3.5 text-blue-400" /> Records
         </button>
       </div>
 
+      {/*  TODAY TAB */}
       {activeTab === 'today' && (
         <>
-          {/* Quick Deck Cards (Without Horizontal Side-Blowout) */}
-          <section className="grid grid-cols-2 gap-3 mb-6">
-            {/* Naam Jap Card */}
+          {/* Quick Deck Cards */}
+          <section className="grid grid-cols-2 gap-3 mb-5">
             <div className="bg-gradient-to-br from-neutral-900 to-neutral-900/60 border border-white/10 rounded-2xl p-3 flex flex-col justify-between">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[11px] font-bold text-rose-400 flex items-center gap-1">
@@ -406,7 +447,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* LeetCode Handle Bar */}
             <div className="bg-neutral-900 border border-white/10 rounded-2xl p-3 flex flex-col justify-between">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[11px] font-bold text-amber-400 flex items-center gap-1">
@@ -423,32 +463,25 @@ export default function Home() {
             </div>
           </section>
 
-          {/*  Task Creation Input Form */}
+          {/*  Task Creation Form */}
           <form onSubmit={addTask} className="space-y-3 mb-6 bg-neutral-900/70 border border-white/10 p-3.5 rounded-3xl shadow-lg">
             <input
               type="text"
-              placeholder="Naya task likho..."
+              placeholder={`Task likho ya sidha "${category}" add karo...`}
               value={newTaskTitle}
               onChange={(e) => setNewTaskTitle(e.target.value)}
               className="w-full bg-black/50 border border-white/10 rounded-2xl px-3.5 py-2.5 text-base sm:text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
             />
 
-            {/* Category Selectors */}
+            {/* Clean Manual Categories Only */}
             <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
-              {[
-                { id: 'general', label: 'General' },
-                { id: 'leetcode', label: 'LeetCode' },
-                { id: 'naam_jap', label: 'Naam Jap' },
-                { id: 'mail', label: 'Mail' },
-                { id: 'job_apply', label: 'Job Apply' },
-                { id: 'productive', label: 'Deep Work' },
-              ].map(cat => (
+              {MANUAL_CATEGORIES.map(cat => (
                 <button
                   key={cat.id}
                   type="button"
-                  onClick={() => setCategory(cat.id)}
+                  onClick={() => setCategory(cat.label)}
                   className={`px-2.5 py-1 rounded-xl whitespace-nowrap transition-all text-[11px] font-semibold ${
-                    category === cat.id 
+                    category === cat.label 
                       ? 'bg-amber-500 text-black shadow-md' 
                       : 'bg-neutral-800 text-neutral-400 hover:text-white'
                   }`}
@@ -458,7 +491,7 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Date & Time Picker */}
+            {/* Device Local Date & Time */}
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="flex items-center gap-1.5 bg-black/50 border border-white/10 rounded-xl px-2.5 py-2 text-neutral-300">
                 <Calendar className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
@@ -490,7 +523,7 @@ export default function Home() {
 
           {/* Today Tasks */}
           <div className="space-y-2.5">
-            <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 px-1">Today's Focus (Auto-Scheduled)</h3>
+            <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 px-1">Today's Focus (Swipe ⬅ to delete)</h3>
 
             {todayTasks.length === 0 ? (
               <div className="text-center py-8 bg-neutral-900/30 border border-white/5 rounded-3xl">
@@ -500,6 +533,8 @@ export default function Home() {
               todayTasks.map((task) => (
                 <div 
                   key={task.id}
+                  onTouchStart={handleTouchStart}
+                  onTouchEnd={(e) => handleTouchEnd(task.id, e)}
                   onClick={() => toggleGeneralTask(task)}
                   className={`group p-3 rounded-2xl border transition-all flex items-center justify-between cursor-pointer ${
                     task.is_completed 
@@ -509,9 +544,7 @@ export default function Home() {
                 >
                   <div className="flex items-center gap-2.5 flex-1 mr-2 min-w-0">
                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
-                      task.is_completed 
-                        ? 'bg-emerald-500 border-emerald-500 text-black' 
-                        : 'border-neutral-600'
+                      task.is_completed ? 'bg-emerald-500 border-emerald-500 text-black' : 'border-neutral-600'
                     }`}>
                       {task.is_completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                     </div>
@@ -525,9 +558,7 @@ export default function Home() {
                           {task.category}
                         </span>
                         {task.due_time && (
-                          <span className="text-[9px] text-amber-400 font-mono">
-                            • {task.due_time}
-                          </span>
+                          <span className="text-[9px] text-amber-400 font-mono">• {task.due_time}</span>
                         )}
                         {task.carry_forward_count > 0 && (
                           <span className="text-[8px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1.5 rounded-full flex items-center gap-0.5">
@@ -564,32 +595,47 @@ export default function Home() {
         </>
       )}
 
-      {/*  UPCOMING TAB (Point 6 Fix: Future Tasks with Countdown) */}
+      {/*  UPCOMING TAB (With Click to Edit & Left-Swipe to Delete) */}
       {activeTab === 'upcoming' && (
         <section className="space-y-3">
           <div className="flex items-center justify-between px-1">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Scheduled Milestones</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Tap to Edit • Swipe ⬅ to Delete</h3>
             <span className="text-xs text-indigo-400 font-mono">{upcomingTasks.length} Planned</span>
           </div>
 
           {upcomingTasks.length === 0 ? (
             <div className="text-center py-10 bg-neutral-900/30 border border-white/5 rounded-3xl">
-              <p className="text-xs text-neutral-500">Aage ke liye koi task plan nahi hai. Upar date select karke schedule karo!</p>
+              <p className="text-xs text-neutral-500">Aage ke liye koi task plan nahi hai.</p>
             </div>
           ) : (
             upcomingTasks.map(task => (
-              <div key={task.id} className="p-3.5 bg-neutral-900/70 border border-white/10 rounded-2xl flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-white">{task.title}</h4>
-                  <p className="text-[10px] text-neutral-400 mt-0.5 flex items-center gap-1">
+              <div 
+                key={task.id}
+                onTouchStart={handleTouchStart}
+                onTouchEnd={(e) => handleTouchEnd(task.id, e)}
+                onClick={() => setEditingTask(task)}
+                className="p-3.5 bg-neutral-900/70 border border-white/10 rounded-2xl flex items-center justify-between cursor-pointer hover:border-indigo-500/40 transition active:scale-[0.99]"
+              >
+                <div className="min-w-0 flex-1 mr-2">
+                  <div className="flex items-center gap-1.5">
+                    <h4 className="text-xs font-bold text-white truncate">{task.title}</h4>
+                    <Edit3 className="w-3 h-3 text-neutral-500" />
+                  </div>
+                  <p className="text-[10px] text-neutral-400 mt-0.5 flex items-center gap-1 font-mono">
                     <Calendar className="w-3 h-3 text-neutral-500" /> {task.target_date} {task.due_time ? `@ ${task.due_time}` : ''}
                   </p>
                 </div>
-                {/* ⏳ Aesthetic Live Countdown Timer */}
-                <div className="text-right">
-                  <span className="text-[11px] font-mono font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-1 rounded-xl">
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-1 rounded-xl whitespace-nowrap">
                     {getCountdownString(task.target_date, task.due_time)}
                   </span>
+                  <button
+                    onClick={(e) => deleteTask(task.id, e)}
+                    className="p-1 text-neutral-500 hover:text-rose-400 transition"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             ))
@@ -601,7 +647,7 @@ export default function Home() {
       {activeTab === 'history' && (
         <section className="space-y-3">
           <div className="flex items-center justify-between px-1">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Completed Archive</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Accomplished History</h3>
             <span className="text-xs text-emerald-400 font-mono font-bold">{historyTasks.length} Done</span>
           </div>
 
@@ -625,6 +671,70 @@ export default function Home() {
             ))
           )}
         </section>
+      )}
+
+      {/*  iOS Bottom Sheet / Edit Task Modal */}
+      {editingTask && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-white/15 w-full max-w-sm rounded-3xl p-5 space-y-4 shadow-2xl animate-in slide-in-from-bottom-5">
+            <div className="flex justify-between items-center border-b border-white/10 pb-3">
+              <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                <SlidersHorizontal className="w-4 h-4 text-amber-500" /> Edit Milestone
+              </h3>
+              <button onClick={() => setEditingTask(null)} className="text-neutral-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-neutral-400 block mb-1">Task Title</label>
+                <input 
+                  type="text" 
+                  value={editingTask.title} 
+                  onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
+                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-neutral-400 block mb-1">Target Date</label>
+                  <input 
+                    type="date" 
+                    value={editingTask.target_date} 
+                    onChange={(e) => setEditingTask({ ...editingTask, target_date: e.target.value })}
+                    className="w-full bg-black/60 border border-white/10 rounded-xl px-2.5 py-2 text-white text-xs focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-neutral-400 block mb-1">Due Time</label>
+                  <input 
+                    type="time" 
+                    value={editingTask.due_time || ''} 
+                    onChange={(e) => setEditingTask({ ...editingTask, due_time: e.target.value })}
+                    className="w-full bg-black/60 border border-white/10 rounded-xl px-2.5 py-2 text-white text-xs focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button 
+                onClick={() => deleteTask(editingTask.id)}
+                className="flex-1 bg-rose-500/15 border border-rose-500/30 hover:bg-rose-500/25 text-rose-400 font-bold py-2.5 rounded-xl transition text-xs flex items-center justify-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete
+              </button>
+              <button 
+                onClick={updateScheduledTask}
+                className="flex-1 bg-amber-500 hover:bg-amber-400 text-black font-bold py-2.5 rounded-xl transition text-xs"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </main>
