@@ -1,36 +1,38 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🔱 SARTHI — Autonomous Routine & Accountability Engine
 
-## Getting Started
+> **SARTHI** (*Systematic Automated Routine & Task Handler Interface*) is a modern, privacy-focused personal operating system designed to automate daily accountability, track spiritual and professional rituals, and maintain strict discipline across all devices.
 
-First, run the development server:
+Designed with an **Apple iOS Glassmorphic Aesthetic**, SARTHI runs seamlessly on **Windows, Android, and iPhone** as a Progressive Web App (PWA) with zero server costs.
 
+---
+
+## ✨ Core Highlights & Features
+
+- ** iOS Liquid Retina Design:** Minimalist dark mode, frosted glass surfaces (`backdrop-blur-2xl`), smooth circular switches, and Dynamic Island floating pill notifications.
+- **⚡ LeetCode Auto-Verifier (Zero Storage):** Directly queries LeetCode's Public GraphQL server to verify accepted submissions in the last 24 hours. No screenshots or manual uploads required.
+- **📿 Sacred Routine Lock (Naam Jap Counter):** Interactive 108-Jap counter that automatically completes associated ritual tasks only upon finishing the sankalp.
+- **⏳ Midnight Auto-Rollover Engine:** Incomplete tasks never disappear—they automatically carry forward to the next day with pending day counters (`+xd pending`).
+- **🔄 Real-time Multi-Device Sync:** Powered by Supabase WebSockets. Instant state synchronization between Laptop, iPhone, and Android without page reloads.
+- **⏰ Smart Notification Engine:** Native browser and system alert notifications for time-sensitive tasks.
+- **📜 Past Records & Audit Trail:** Dedicated archive view to inspect accomplishment timestamps and maintain historical streak logs.
+
+---
+
+## 🛠 Tech Stack
+
+- **Frontend Framework:** [Next.js (App Router)](https://nextjs.org/)
+- **Language:** [TypeScript](https://www.typescriptlang.org/)
+- **Styling:** [Tailwind CSS](https://tailwindcss.com/)
+- **Database & Realtime:** [Supabase (PostgreSQL + Realtime)](https://supabase.com/)
+- **Icons:** [Lucide React](https://lucide.dev/)
+- **VFX / Feedback:** [Canvas Confetti](https://www.npmjs.com/package/canvas-confetti)
+- **Deployment:** [Vercel](https://vercel.com/) (PWA Ready)
+
+---
+
+## 🚀 Getting Started
+
+### 1. Clone the Repository
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+git clone [https://github.com/](https://github.com/)<your-username>/sarthi-app.git
+cd sarthi-app
