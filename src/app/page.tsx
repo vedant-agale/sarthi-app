@@ -21,7 +21,8 @@ import {
   RotateCcw,
   Hourglass,
   Edit3,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Lock
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -49,6 +50,8 @@ const DEFAULT_ROUTINES = [
   { title: 'Job Apply & Follow-ups', category: 'job_apply' },
   { title: 'Productive Deep Work', category: 'productive' },
 ];
+
+const DEFAULT_CATEGORIES = ['naam_jap', 'leetcode', 'mail', 'job_apply', 'productive'];
 
 const MANUAL_CATEGORIES = [
   { id: 'Personal', label: 'Personal' },
@@ -81,7 +84,6 @@ export default function Home() {
   const [notificationsAllowed, setNotificationsAllowed] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  //  Native Gesture Swipe State
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<number>(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -97,6 +99,8 @@ export default function Home() {
     setBanner({ title, message, type });
     setTimeout(() => setBanner(null), 4500);
   };
+
+  const isProtectedTask = (task: Task) => DEFAULT_CATEGORIES.includes(task.category);
 
   const requestNotificationAccess = async () => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -228,7 +232,16 @@ export default function Home() {
     triggerBanner('Updated!', 'Task details update ho gayi.', 'success');
   };
 
+  // 🟢 Delete Protection for Default Tasks
   const deleteTask = async (id: string) => {
+    const taskToDelete = tasks.find(t => t.id === id);
+    if (taskToDelete && isProtectedTask(taskToDelete)) {
+      triggerBanner('Locked Routine 🔒', 'Ye mandatory task hai, delete nahi ho sakta!', 'error');
+      setActiveDragId(null);
+      setDragOffset(0);
+      return;
+    }
+
     await supabase.from('tasks').delete().eq('id', id);
     setDeletingId(null);
     setActiveDragId(null);
@@ -236,23 +249,22 @@ export default function Home() {
     setEditingTask(null);
   };
 
-  //  Touch Physics Handlers (1:1 Dragging & Release Execution)
-  const onTouchStartCard = (id: string, e: React.TouchEvent) => {
+  // Swipe Gestures: Disabled for Protected Tasks
+  const onTouchStartCard = (task: Task, e: React.TouchEvent) => {
+    if (isProtectedTask(task)) return; // Default tasks cannot be dragged
     touchStartXRef.current = e.touches[0].clientX;
     isSwipingRef.current = false;
-    setActiveDragId(id);
+    setActiveDragId(task.id);
     setDragOffset(0);
   };
 
-  const onTouchMoveCard = (e: React.TouchEvent) => {
-    if (!activeDragId) return;
+  const onTouchMoveCard = (task: Task, e: React.TouchEvent) => {
+    if (isProtectedTask(task) || activeDragId !== task.id) return;
     const currentX = e.touches[0].clientX;
     const diff = currentX - touchStartXRef.current;
 
-    // Only allow left drag
     if (diff < -8) {
       isSwipingRef.current = true;
-      // Slight resistance damping after -100px
       const clamped = diff < -120 ? -120 + (diff + 120) * 0.25 : diff;
       setDragOffset(clamped);
     } else {
@@ -260,18 +272,16 @@ export default function Home() {
     }
   };
 
-  const onTouchEndCard = (id: string) => {
-    if (!activeDragId || activeDragId !== id) return;
+  const onTouchEndCard = (task: Task) => {
+    if (isProtectedTask(task) || activeDragId !== task.id) return;
 
-    // Trigger delete threshold
     if (dragOffset < -85) {
-      setDeletingId(id);
-      setDragOffset(-320); // Slide completely off screen
+      setDeletingId(task.id);
+      setDragOffset(-320);
       setTimeout(() => {
-        deleteTask(id);
-      }, 350); // Fluid exit duration
+        deleteTask(task.id);
+      }, 350);
     } else {
-      // Elastic spring back
       setDragOffset(0);
       setTimeout(() => {
         setActiveDragId(null);
@@ -537,7 +547,7 @@ export default function Home() {
             </button>
           </form>
 
-          {/* Today Tasks with iOS Real-time Swipe Gesture */}
+          {/* Today Tasks */}
           <div className="space-y-2.5">
             <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 px-1">Today's Focus</h3>
 
@@ -550,6 +560,7 @@ export default function Home() {
                 const isItemDragging = activeDragId === task.id;
                 const isItemDeleting = deletingId === task.id;
                 const offset = isItemDragging ? dragOffset : 0;
+                const protectedItem = isProtectedTask(task);
 
                 return (
                   <div 
@@ -558,21 +569,23 @@ export default function Home() {
                       isItemDeleting ? 'max-h-0 opacity-0 mb-0 py-0 scale-95' : 'max-h-28 opacity-100 mb-2.5'
                     }`}
                   >
-                    {/* Background iOS Red Action with Scaling Trash Icon */}
-                    <div className="absolute inset-0 bg-rose-600 rounded-2xl flex items-center justify-end pr-5 text-white">
-                      <Trash2 
-                        className="w-5 h-5 transition-transform duration-100" 
-                        style={{ 
-                          transform: `scale(${Math.min(1.25, Math.max(0.7, Math.abs(offset) / 70))})` 
-                        }} 
-                      />
-                    </div>
+                    {/* Background Red Trash: ONLY shown for Custom Deletable Tasks */}
+                    {!protectedItem && (
+                      <div className="absolute inset-0 bg-rose-600 rounded-2xl flex items-center justify-end pr-5 text-white">
+                        <Trash2 
+                          className="w-5 h-5 transition-transform duration-100" 
+                          style={{ 
+                            transform: `scale(${Math.min(1.25, Math.max(0.7, Math.abs(offset) / 70))})` 
+                          }} 
+                        />
+                      </div>
+                    )}
 
-                    {/* Front iOS Card (Follows Finger Exactly) */}
+                    {/* Front iOS Card */}
                     <div 
-                      onTouchStart={(e) => onTouchStartCard(task.id, e)}
-                      onTouchMove={onTouchMoveCard}
-                      onTouchEnd={() => onTouchEndCard(task.id)}
+                      onTouchStart={(e) => onTouchStartCard(task, e)}
+                      onTouchMove={(e) => onTouchMoveCard(task, e)}
+                      onTouchEnd={() => onTouchEndCard(task)}
                       onClick={() => toggleGeneralTask(task)}
                       style={{
                         transform: `translateX(${offset}px)`,
@@ -592,9 +605,14 @@ export default function Home() {
                         </div>
 
                         <div className="flex flex-col min-w-0">
-                          <span className={`text-xs font-semibold truncate ${task.is_completed ? 'line-through text-neutral-500' : 'text-neutral-100'}`}>
-                            {task.title}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-xs font-semibold truncate ${task.is_completed ? 'line-through text-neutral-500' : 'text-neutral-100'}`}>
+                              {task.title}
+                            </span>
+                            {protectedItem && (
+                              <Lock className="w-2.5 h-2.5 text-neutral-600 shrink-0" />
+                            )}
+                          </div>
                           <div className="flex items-center gap-1.5 mt-0.5">
                             <span className="text-[9px] text-neutral-500 uppercase tracking-wider font-semibold">
                               {task.category}
@@ -649,6 +667,7 @@ export default function Home() {
               const isItemDragging = activeDragId === task.id;
               const isItemDeleting = deletingId === task.id;
               const offset = isItemDragging ? dragOffset : 0;
+              const protectedItem = isProtectedTask(task);
 
               return (
                 <div 
@@ -657,14 +676,16 @@ export default function Home() {
                     isItemDeleting ? 'max-h-0 opacity-0 mb-0 py-0 scale-95' : 'max-h-28 opacity-100 mb-2.5'
                   }`}
                 >
-                  <div className="absolute inset-0 bg-rose-600 rounded-2xl flex items-center justify-end pr-5 text-white">
-                    <Trash2 className="w-5 h-5" />
-                  </div>
+                  {!protectedItem && (
+                    <div className="absolute inset-0 bg-rose-600 rounded-2xl flex items-center justify-end pr-5 text-white">
+                      <Trash2 className="w-5 h-5" />
+                    </div>
+                  )}
 
                   <div 
-                    onTouchStart={(e) => onTouchStartCard(task.id, e)}
-                    onTouchMove={onTouchMoveCard}
-                    onTouchEnd={() => onTouchEndCard(task.id)}
+                    onTouchStart={(e) => onTouchStartCard(task, e)}
+                    onTouchMove={(e) => onTouchMoveCard(task, e)}
+                    onTouchEnd={() => onTouchEndCard(task)}
                     onClick={() => {
                       if (!isSwipingRef.current) setEditingTask(task);
                     }}
@@ -772,12 +793,14 @@ export default function Home() {
             </div>
 
             <div className="flex gap-2 pt-2">
-              <button 
-                onClick={() => deleteTask(editingTask.id)}
-                className="flex-1 bg-rose-500/15 border border-rose-500/30 hover:bg-rose-500/25 text-rose-400 font-bold py-2.5 rounded-xl transition text-xs flex items-center justify-center gap-1"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </button>
+              {!isProtectedTask(editingTask) && (
+                <button 
+                  onClick={() => deleteTask(editingTask.id)}
+                  className="flex-1 bg-rose-500/15 border border-rose-500/30 hover:bg-rose-500/25 text-rose-400 font-bold py-2.5 rounded-xl transition text-xs flex items-center justify-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </button>
+              )}
               <button 
                 onClick={updateScheduledTask}
                 className="flex-1 bg-amber-500 hover:bg-amber-400 text-black font-bold py-2.5 rounded-xl transition text-xs"
