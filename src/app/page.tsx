@@ -50,7 +50,6 @@ const DEFAULT_ROUTINES = [
   { title: 'Productive Deep Work', category: 'productive' },
 ];
 
-// Custom Categories for manual entry
 const MANUAL_CATEGORIES = [
   { id: 'Personal', label: 'Personal' },
   { id: 'Workout', label: 'Gym / Workout' },
@@ -63,7 +62,6 @@ export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeTab, setActiveTab] = useState<'today' | 'upcoming' | 'history'>('today');
   
-  // Dynamic Local Device Time & Date
   const getDeviceDate = () => new Date().toISOString().split('T')[0];
   const getDeviceTime = () => {
     const d = new Date();
@@ -75,10 +73,7 @@ export default function Home() {
   const [targetDate, setTargetDate] = useState(getDeviceDate());
   const [dueTime, setDueTime] = useState(getDeviceTime());
 
-  // Edit Modal State
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-
-  // Widget States
   const [japCount, setJapCount] = useState(0);
   const [leetcodeUsername, setLeetcodeUsername] = useState('vedant-agale');
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
@@ -86,9 +81,12 @@ export default function Home() {
   const [notificationsAllowed, setNotificationsAllowed] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Swipe-to-delete tracking
-  const [touchStartX, setTouchStartX] = useState<number | null>(null);
-  const [swipedTaskId, setSwipedTaskId] = useState<string | null>(null);
+  //  Native Gesture Swipe State
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState<number>(0);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const touchStartXRef = useRef<number>(0);
+  const isSwipingRef = useRef<boolean>(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -110,11 +108,9 @@ export default function Home() {
     }
   };
 
-  // Auto-routine process
   const processDailyLifecycle = async (allTasks: Task[]) => {
     const today = getDeviceDate();
 
-    // Rollover unfinished tasks
     const overdueTasks = allTasks.filter(t => !t.is_completed && t.target_date < today);
     if (overdueTasks.length > 0) {
       for (const t of overdueTasks) {
@@ -125,7 +121,6 @@ export default function Home() {
       }
     }
 
-    // Auto-create 5 Default tasks
     const todaysTasks = allTasks.filter(t => t.target_date === today);
     const missingDefaults = DEFAULT_ROUTINES.filter(
       def => !todaysTasks.some(t => t.title.toLowerCase().includes(def.title.toLowerCase().slice(0, 8)))
@@ -151,7 +146,6 @@ export default function Home() {
     }
   };
 
-  // Realtime WebSocket & Evening 7 PM Watcher
   useEffect(() => {
     fetchTasks();
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -205,7 +199,6 @@ export default function Home() {
     };
   }, []);
 
-  // 🟢 Add Task: Auto-fill category name if blank + current device time
   const addTask = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalTitle = newTaskTitle.trim() ? newTaskTitle.trim() : category;
@@ -223,7 +216,6 @@ export default function Home() {
     triggerBanner('Saved!', `"${finalTitle}" schedule ho gaya.`, 'success');
   };
 
-  // Update Task Modal Action
   const updateScheduledTask = async () => {
     if (!editingTask) return;
     await supabase.from('tasks').update({
@@ -236,34 +228,63 @@ export default function Home() {
     triggerBanner('Updated!', 'Task details update ho gayi.', 'success');
   };
 
-  // Delete Task
-  const deleteTask = async (id: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
+  const deleteTask = async (id: string) => {
     await supabase.from('tasks').delete().eq('id', id);
-    setSwipedTaskId(null);
+    setDeletingId(null);
+    setActiveDragId(null);
+    setDragOffset(0);
     setEditingTask(null);
-    triggerBanner('Deleted', 'Task remove kar diya gaya.', 'info');
   };
 
-  // Swipe Detection (Touch Event Handlers)
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStartX(e.touches[0].clientX);
+  //  Touch Physics Handlers (1:1 Dragging & Release Execution)
+  const onTouchStartCard = (id: string, e: React.TouchEvent) => {
+    touchStartXRef.current = e.touches[0].clientX;
+    isSwipingRef.current = false;
+    setActiveDragId(id);
+    setDragOffset(0);
   };
 
-  const handleTouchEnd = (id: string, e: React.TouchEvent) => {
-    if (!touchStartX) return;
-    const touchEndX = e.changedTouches[0].clientX;
-    const diffX = touchStartX - touchEndX;
+  const onTouchMoveCard = (e: React.TouchEvent) => {
+    if (!activeDragId) return;
+    const currentX = e.touches[0].clientX;
+    const diff = currentX - touchStartXRef.current;
 
-    // Swiped Left by > 75px
-    if (diffX > 75) {
-      deleteTask(id);
+    // Only allow left drag
+    if (diff < -8) {
+      isSwipingRef.current = true;
+      // Slight resistance damping after -100px
+      const clamped = diff < -120 ? -120 + (diff + 120) * 0.25 : diff;
+      setDragOffset(clamped);
+    } else {
+      setDragOffset(0);
     }
-    setTouchStartX(null);
   };
 
-  // Toggle Complete
+  const onTouchEndCard = (id: string) => {
+    if (!activeDragId || activeDragId !== id) return;
+
+    // Trigger delete threshold
+    if (dragOffset < -85) {
+      setDeletingId(id);
+      setDragOffset(-320); // Slide completely off screen
+      setTimeout(() => {
+        deleteTask(id);
+      }, 350); // Fluid exit duration
+    } else {
+      // Elastic spring back
+      setDragOffset(0);
+      setTimeout(() => {
+        setActiveDragId(null);
+      }, 200);
+    }
+    setTimeout(() => {
+      isSwipingRef.current = false;
+    }, 100);
+  };
+
   const toggleGeneralTask = async (task: Task) => {
+    if (isSwipingRef.current) return;
+
     if (task.category === 'leetcode' && !task.is_completed) {
       triggerBanner('LeetCode Lock', 'Complete karne ke liye "Verify AC" dabayein.', 'info');
       return;
@@ -282,7 +303,6 @@ export default function Home() {
     }).eq('id', task.id);
   };
 
-  // LeetCode Verification via GraphQL route
   const verifyLeetCode = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setVerifyingId(taskId);
@@ -307,7 +327,6 @@ export default function Home() {
     }
   };
 
-  // Naam Jap Increment
   const handleJapIncrement = async () => {
     const nextCount = japCount + 1;
     setJapCount(nextCount);
@@ -326,7 +345,6 @@ export default function Home() {
     }
   };
 
-  // Countdown Helper
   const getCountdownString = (targetDateStr: string, dueTimeStr?: string | null) => {
     const target = new Date(`${targetDateStr}T${dueTimeStr || '00:00:00'}`);
     const diff = target.getTime() - currentTime.getTime();
@@ -351,7 +369,7 @@ export default function Home() {
       
       {/* 🟢 iOS Floating Pill */}
       {banner && (
-        <div className="fixed top-4 inset-x-0 mx-auto max-w-xs px-4 z-50 animate-in fade-in slide-in-from-top-3">
+        <div className="fixed top-4 inset-x-0 mx-auto max-w-xs px-4 z-50">
           <div className="bg-neutral-900/95 backdrop-blur-2xl border border-white/10 rounded-3xl p-3 shadow-2xl flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className={`p-2 rounded-2xl ${
@@ -473,7 +491,6 @@ export default function Home() {
               className="w-full bg-black/50 border border-white/10 rounded-2xl px-3.5 py-2.5 text-base sm:text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
             />
 
-            {/* Clean Manual Categories Only */}
             <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
               {MANUAL_CATEGORIES.map(cat => (
                 <button
@@ -491,7 +508,6 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Device Local Date & Time */}
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="flex items-center gap-1.5 bg-black/50 border border-white/10 rounded-xl px-2.5 py-2 text-neutral-300">
                 <Calendar className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
@@ -521,85 +537,106 @@ export default function Home() {
             </button>
           </form>
 
-          {/* Today Tasks */}
+          {/* Today Tasks with iOS Real-time Swipe Gesture */}
           <div className="space-y-2.5">
-            <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 px-1">Today's Focus (Swipe ⬅ to delete)</h3>
+            <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 px-1">Today's Focus</h3>
 
             {todayTasks.length === 0 ? (
               <div className="text-center py-8 bg-neutral-900/30 border border-white/5 rounded-3xl">
                 <p className="text-xs text-neutral-500">Sab tasks done hain!</p>
               </div>
             ) : (
-              todayTasks.map((task) => (
-                <div 
-                  key={task.id}
-                  onTouchStart={handleTouchStart}
-                  onTouchEnd={(e) => handleTouchEnd(task.id, e)}
-                  onClick={() => toggleGeneralTask(task)}
-                  className={`group p-3 rounded-2xl border transition-all flex items-center justify-between cursor-pointer ${
-                    task.is_completed 
-                      ? 'bg-neutral-900/30 border-white/5 opacity-50' 
-                      : 'bg-neutral-900/80 border-white/10'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 flex-1 mr-2 min-w-0">
-                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
-                      task.is_completed ? 'bg-emerald-500 border-emerald-500 text-black' : 'border-neutral-600'
-                    }`}>
-                      {task.is_completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+              todayTasks.map((task) => {
+                const isItemDragging = activeDragId === task.id;
+                const isItemDeleting = deletingId === task.id;
+                const offset = isItemDragging ? dragOffset : 0;
+
+                return (
+                  <div 
+                    key={task.id}
+                    className={`relative overflow-hidden rounded-2xl transition-all duration-300 ${
+                      isItemDeleting ? 'max-h-0 opacity-0 mb-0 py-0 scale-95' : 'max-h-28 opacity-100 mb-2.5'
+                    }`}
+                  >
+                    {/* Background iOS Red Action with Scaling Trash Icon */}
+                    <div className="absolute inset-0 bg-rose-600 rounded-2xl flex items-center justify-end pr-5 text-white">
+                      <Trash2 
+                        className="w-5 h-5 transition-transform duration-100" 
+                        style={{ 
+                          transform: `scale(${Math.min(1.25, Math.max(0.7, Math.abs(offset) / 70))})` 
+                        }} 
+                      />
                     </div>
 
-                    <div className="flex flex-col min-w-0">
-                      <span className={`text-xs font-semibold truncate ${task.is_completed ? 'line-through text-neutral-500' : 'text-neutral-100'}`}>
-                        {task.title}
-                      </span>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[9px] text-neutral-500 uppercase tracking-wider font-semibold">
-                          {task.category}
-                        </span>
-                        {task.due_time && (
-                          <span className="text-[9px] text-amber-400 font-mono">• {task.due_time}</span>
-                        )}
-                        {task.carry_forward_count > 0 && (
-                          <span className="text-[8px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1.5 rounded-full flex items-center gap-0.5">
-                            <RotateCcw className="w-2 h-2" /> +{task.carry_forward_count}d
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {task.category === 'leetcode' && !task.is_completed && (
-                      <button
-                        onClick={(e) => verifyLeetCode(task.id, e)}
-                        disabled={verifyingId === task.id}
-                        className="bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-semibold px-2 py-1 rounded-xl flex items-center gap-1 active:scale-95"
-                      >
-                        <RefreshCw className={`w-3 h-3 ${verifyingId === task.id ? 'animate-spin' : ''}`} />
-                        Verify
-                      </button>
-                    )}
-
-                    <button
-                      onClick={(e) => deleteTask(task.id, e)}
-                      className="opacity-30 group-hover:opacity-100 p-1 rounded-xl text-neutral-400 hover:text-rose-400 transition"
+                    {/* Front iOS Card (Follows Finger Exactly) */}
+                    <div 
+                      onTouchStart={(e) => onTouchStartCard(task.id, e)}
+                      onTouchMove={onTouchMoveCard}
+                      onTouchEnd={() => onTouchEndCard(task.id)}
+                      onClick={() => toggleGeneralTask(task)}
+                      style={{
+                        transform: `translateX(${offset}px)`,
+                        transition: isItemDragging ? 'none' : 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)'
+                      }}
+                      className={`relative z-10 p-3 rounded-2xl border flex items-center justify-between cursor-pointer ${
+                        task.is_completed 
+                          ? 'bg-neutral-900/90 border-white/5 opacity-50' 
+                          : 'bg-neutral-900 border-white/10'
+                      }`}
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                      <div className="flex items-center gap-2.5 flex-1 mr-2 min-w-0">
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                          task.is_completed ? 'bg-emerald-500 border-emerald-500 text-black' : 'border-neutral-600'
+                        }`}>
+                          {task.is_completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                        </div>
+
+                        <div className="flex flex-col min-w-0">
+                          <span className={`text-xs font-semibold truncate ${task.is_completed ? 'line-through text-neutral-500' : 'text-neutral-100'}`}>
+                            {task.title}
+                          </span>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[9px] text-neutral-500 uppercase tracking-wider font-semibold">
+                              {task.category}
+                            </span>
+                            {task.due_time && (
+                              <span className="text-[9px] text-amber-400 font-mono">• {task.due_time}</span>
+                            )}
+                            {task.carry_forward_count > 0 && (
+                              <span className="text-[8px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1.5 rounded-full flex items-center gap-0.5">
+                                <RotateCcw className="w-2 h-2" /> +{task.carry_forward_count}d
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {task.category === 'leetcode' && !task.is_completed && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={(e) => verifyLeetCode(task.id, e)}
+                            disabled={verifyingId === task.id}
+                            className="bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-semibold px-2 py-1 rounded-xl flex items-center gap-1 active:scale-95"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${verifyingId === task.id ? 'animate-spin' : ''}`} />
+                            Verify
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </>
       )}
 
-      {/*  UPCOMING TAB (With Click to Edit & Left-Swipe to Delete) */}
+      {/*  UPCOMING TAB */}
       {activeTab === 'upcoming' && (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between px-1">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Tap to Edit • Swipe ⬅ to Delete</h3>
+        <section className="space-y-2.5">
+          <div className="flex items-center justify-between px-1 mb-1">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Scheduled Milestones</h3>
             <span className="text-xs text-indigo-400 font-mono">{upcomingTasks.length} Planned</span>
           </div>
 
@@ -608,37 +645,52 @@ export default function Home() {
               <p className="text-xs text-neutral-500">Aage ke liye koi task plan nahi hai.</p>
             </div>
           ) : (
-            upcomingTasks.map(task => (
-              <div 
-                key={task.id}
-                onTouchStart={handleTouchStart}
-                onTouchEnd={(e) => handleTouchEnd(task.id, e)}
-                onClick={() => setEditingTask(task)}
-                className="p-3.5 bg-neutral-900/70 border border-white/10 rounded-2xl flex items-center justify-between cursor-pointer hover:border-indigo-500/40 transition active:scale-[0.99]"
-              >
-                <div className="min-w-0 flex-1 mr-2">
-                  <div className="flex items-center gap-1.5">
-                    <h4 className="text-xs font-bold text-white truncate">{task.title}</h4>
-                    <Edit3 className="w-3 h-3 text-neutral-500" />
-                  </div>
-                  <p className="text-[10px] text-neutral-400 mt-0.5 flex items-center gap-1 font-mono">
-                    <Calendar className="w-3 h-3 text-neutral-500" /> {task.target_date} {task.due_time ? `@ ${task.due_time}` : ''}
-                  </p>
-                </div>
+            upcomingTasks.map(task => {
+              const isItemDragging = activeDragId === task.id;
+              const isItemDeleting = deletingId === task.id;
+              const offset = isItemDragging ? dragOffset : 0;
 
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-1 rounded-xl whitespace-nowrap">
-                    {getCountdownString(task.target_date, task.due_time)}
-                  </span>
-                  <button
-                    onClick={(e) => deleteTask(task.id, e)}
-                    className="p-1 text-neutral-500 hover:text-rose-400 transition"
+              return (
+                <div 
+                  key={task.id}
+                  className={`relative overflow-hidden rounded-2xl transition-all duration-300 ${
+                    isItemDeleting ? 'max-h-0 opacity-0 mb-0 py-0 scale-95' : 'max-h-28 opacity-100 mb-2.5'
+                  }`}
+                >
+                  <div className="absolute inset-0 bg-rose-600 rounded-2xl flex items-center justify-end pr-5 text-white">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+
+                  <div 
+                    onTouchStart={(e) => onTouchStartCard(task.id, e)}
+                    onTouchMove={onTouchMoveCard}
+                    onTouchEnd={() => onTouchEndCard(task.id)}
+                    onClick={() => {
+                      if (!isSwipingRef.current) setEditingTask(task);
+                    }}
+                    style={{
+                      transform: `translateX(${offset}px)`,
+                      transition: isItemDragging ? 'none' : 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)'
+                    }}
+                    className="relative z-10 p-3.5 bg-neutral-900 border border-white/10 rounded-2xl flex items-center justify-between cursor-pointer active:scale-[0.99]"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                    <div className="min-w-0 flex-1 mr-2">
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="text-xs font-bold text-white truncate">{task.title}</h4>
+                        <Edit3 className="w-3 h-3 text-neutral-500" />
+                      </div>
+                      <p className="text-[10px] text-neutral-400 mt-0.5 flex items-center gap-1 font-mono">
+                        <Calendar className="w-3 h-3 text-neutral-500" /> {task.target_date} {task.due_time ? `@ ${task.due_time}` : ''}
+                      </p>
+                    </div>
+
+                    <span className="text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-1 rounded-xl whitespace-nowrap">
+                      {getCountdownString(task.target_date, task.due_time)}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </section>
       )}
@@ -676,7 +728,7 @@ export default function Home() {
       {/*  iOS Bottom Sheet / Edit Task Modal */}
       {editingTask && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-white/15 w-full max-w-sm rounded-3xl p-5 space-y-4 shadow-2xl animate-in slide-in-from-bottom-5">
+          <div className="bg-neutral-900 border border-white/15 w-full max-w-sm rounded-3xl p-5 space-y-4 shadow-2xl">
             <div className="flex justify-between items-center border-b border-white/10 pb-3">
               <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
                 <SlidersHorizontal className="w-4 h-4 text-amber-500" /> Edit Milestone
