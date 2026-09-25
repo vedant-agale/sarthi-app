@@ -27,8 +27,7 @@ import {
   ShoppingBag,
   Wallet,
   ArrowUpRight,
-  ArrowDownLeft,
-  DollarSign
+  ArrowDownLeft
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -119,7 +118,6 @@ export default function Home() {
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [verifyingGithubId, setVerifyingGithubId] = useState<string | null>(null);
   const [banner, setBanner] = useState<BannerNotification | null>(null);
-  const [notificationsAllowed, setNotificationsAllowed] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Gestures
@@ -218,17 +216,23 @@ export default function Home() {
     e.preventDefault();
     const finalTitle = newTaskTitle.trim() ? newTaskTitle.trim() : category;
 
-    await supabase.from('tasks').insert([{ 
+    const { error } = await supabase.from('tasks').insert([{ 
       title: finalTitle, 
       category: category.toLowerCase().replace(/[^a-z0-9]/g, '_'),
       target_date: targetDate,
       due_time: dueTime || null
     }]);
 
+    if (error) {
+      triggerBanner('Save Failed', error.message, 'error');
+      return;
+    }
+
     setNewTaskTitle('');
     setDueTime(getDeviceTime());
     setTargetDate(getDeviceDate());
     triggerBanner('Saved!', `"${finalTitle}" schedule ho gaya.`, 'success');
+    fetchAllData();
   };
 
   const deleteTask = async (id: string) => {
@@ -245,6 +249,7 @@ export default function Home() {
     setActiveDragId(null);
     setDragOffset(0);
     setEditingTask(null);
+    fetchAllData();
   };
 
   const toggleGeneralTask = async (task: Task) => {
@@ -269,6 +274,7 @@ export default function Home() {
       is_completed: updated,
       completed_at: updated ? new Date().toISOString() : null
     }).eq('id', task.id);
+    fetchAllData();
   };
 
   // LeetCode Verify
@@ -283,6 +289,7 @@ export default function Home() {
         confetti({ particleCount: 90, spread: 70, origin: { y: 0.7 } });
         triggerBanner('Verified! 🔥', data.message, 'success');
         await supabase.from('tasks').update({ is_completed: true, completed_at: new Date().toISOString() }).eq('id', taskId);
+        fetchAllData();
       } else {
         triggerBanner('Not Verified', data.message || 'Aaj koi solve nahi mila.', 'error');
       }
@@ -293,23 +300,48 @@ export default function Home() {
     }
   };
 
-  // GitHub Verify
+  // Direct Client-Side GitHub Verify (No serverless proxy bug)
   const verifyGitHub = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!githubUsername.trim()) {
+      triggerBanner('Username Missing', 'GitHub username fill karo!', 'error');
+      return;
+    }
+
     setVerifyingGithubId(taskId);
     try {
-      const res = await fetch(`/api/github?username=${githubUsername.trim()}`);
-      const data = await res.json();
+      const res = await fetch(`https://api.github.com/users/${githubUsername.trim()}/events`, {
+        headers: { 'Accept': 'application/vnd.github.v3+json' },
+      });
 
-      if (data.verified) {
+      if (!res.ok) {
+        triggerBanner('GitHub Error', 'Account nahi mila ya rate limit cross hui.', 'error');
+        return;
+      }
+
+      const events = await res.json();
+      const now = Date.now();
+      const getISTDate = (d: string) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+      const todayPush = Array.isArray(events) && events.find((ev: any) => {
+        if (ev.type !== 'PushEvent') return false;
+        const evTime = new Date(ev.created_at).getTime();
+        const diffHours = (now - evTime) / (1000 * 60 * 60);
+        return diffHours <= 24 || getISTDate(ev.created_at) === todayIST;
+      });
+
+      if (todayPush) {
         confetti({ particleCount: 90, spread: 70, origin: { y: 0.7 } });
-        triggerBanner('Verified! 🚀', data.message, 'success');
+        const repo = todayPush.repo?.name || 'repository';
+        triggerBanner('Verified! 🚀', `Aaj ka push detect hua: ${repo}`, 'success');
         await supabase.from('tasks').update({ is_completed: true, completed_at: new Date().toISOString() }).eq('id', taskId);
+        fetchAllData();
       } else {
-        triggerBanner('No Commits Found', data.message, 'error');
+        triggerBanner('No Commits Found', 'Aaj GitHub par koi commit/push nahi mila!', 'error');
       }
     } catch {
-      triggerBanner('Network Error', 'GitHub connect nahi ho saka.', 'error');
+      triggerBanner('Network Error', 'GitHub se connect nahi ho paya.', 'error');
     } finally {
       setVerifyingGithubId(null);
     }
@@ -326,30 +358,39 @@ export default function Home() {
       const japTask = tasks.find(t => t.category === 'naam_jap' && !t.is_completed);
       if (japTask) {
         await supabase.from('tasks').update({ is_completed: true, completed_at: new Date().toISOString() }).eq('id', japTask.id);
+        fetchAllData();
       }
     }
   };
 
-  // 2. Shopping Operations
+  // 2. Shopping Operations (With Error Checking)
   const addShoppingItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newShoppingItem.trim()) return;
 
-    await supabase.from('shopping_items').insert([{ title: newShoppingItem.trim() }]);
+    const { error } = await supabase.from('shopping_items').insert([{ title: newShoppingItem.trim() }]);
+    if (error) {
+      triggerBanner('Database Error', 'Pehle Supabase me SQL script run karo! ' + error.message, 'error');
+      return;
+    }
+
     setNewShoppingItem('');
     triggerBanner('Added to List', 'Bazaar me khareedne ke liye save hua.', 'success');
+    fetchAllData();
   };
 
   const toggleShoppingItem = async (item: ShoppingItem) => {
     await supabase.from('shopping_items').update({ is_bought: !item.is_bought }).eq('id', item.id);
+    fetchAllData();
   };
 
   const clearBoughtItems = async () => {
     await supabase.from('shopping_items').delete().eq('is_bought', true);
     triggerBanner('Cleared', 'Khareede hue items list se remove ho gaye.', 'info');
+    fetchAllData();
   };
 
-  // 3. Khaata Operations
+  // 3. Khaata Operations (With Error Checking)
   const addKhaataEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!khaataName.trim() || !khaataAmount.trim()) {
@@ -357,7 +398,7 @@ export default function Home() {
       return;
     }
 
-    await supabase.from('khaata_records').insert([{
+    const { error } = await supabase.from('khaata_records').insert([{
       person_name: khaataName.trim(),
       amount: parseFloat(khaataAmount),
       type: khaataType,
@@ -365,23 +406,31 @@ export default function Home() {
       note: khaataNote.trim() || null
     }]);
 
+    if (error) {
+      triggerBanner('Database Error', 'Pehle Supabase me SQL script run karo! ' + error.message, 'error');
+      return;
+    }
+
     setKhaataName('');
     setKhaataAmount('');
     setKhaataDueDate('');
     setKhaataNote('');
     triggerBanner('Record Saved', 'Hisaab diary me save ho gaya.', 'success');
+    fetchAllData();
   };
 
   const toggleKhaataSettled = async (record: KhaataRecord) => {
     await supabase.from('khaata_records').update({ is_settled: !record.is_settled }).eq('id', record.id);
+    fetchAllData();
   };
 
   const deleteKhaataRecord = async (id: string) => {
     await supabase.from('khaata_records').delete().eq('id', id);
     triggerBanner('Removed', 'Record remove kar diya gaya.', 'info');
+    fetchAllData();
   };
 
-  // Gesture Handlers
+  // Gestures
   const onTouchStartCard = (task: Task, e: React.TouchEvent) => {
     if (isProtectedTask(task)) return;
     touchStartXRef.current = e.touches[0].clientX;
@@ -427,7 +476,6 @@ export default function Home() {
     return `${hours}h left`;
   };
 
-  // Khaata Balance Calculations
   const totalLenaHai = useMemo(() => {
     return khaataRecords
       .filter(r => r.type === 'lena' && !r.is_settled)
@@ -487,7 +535,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/*  Module Switcher (Routine / Bazaar / Khaata) */}
+      {/*  Module Switcher */}
       <div className="grid grid-cols-3 bg-neutral-900/90 p-1 rounded-2xl border border-white/10 text-xs font-semibold mb-5">
         <button
           onClick={() => setCurrentModule('routine')}
@@ -515,12 +563,9 @@ export default function Home() {
         </button>
       </div>
 
-      {/* ========================================================
-          MODULE 1: ROUTINE & ACCOUNTABILITY
-      ======================================================== */}
+      {/* MODULE 1: ROUTINE */}
       {currentModule === 'routine' && (
         <>
-          {/* Sub Tabs */}
           <div className="grid grid-cols-3 bg-neutral-950 p-1 rounded-xl border border-white/5 text-[11px] font-semibold mb-5">
             <button
               onClick={() => setActiveTab('today')}
@@ -544,9 +589,8 @@ export default function Home() {
 
           {activeTab === 'today' && (
             <>
-              {/* Quick Deck Cards */}
+              {/* Quick Deck */}
               <section className="grid grid-cols-3 gap-2 mb-5">
-                {/* Naam Jap */}
                 <div className="bg-neutral-900 border border-white/10 rounded-2xl p-2.5 flex flex-col justify-between">
                   <span className="text-[10px] font-bold text-rose-400 flex items-center gap-1">
                     <Heart className="w-3 h-3 fill-rose-500/20" /> Naam Jap
@@ -560,7 +604,6 @@ export default function Home() {
                   </button>
                 </div>
 
-                {/* LeetCode Handle */}
                 <div className="bg-neutral-900 border border-white/10 rounded-2xl p-2.5 flex flex-col justify-between">
                   <span className="text-[10px] font-bold text-amber-400 flex items-center gap-1">
                     <Code2 className="w-3 h-3" /> LeetCode
@@ -572,10 +615,9 @@ export default function Home() {
                     placeholder="Handle"
                     className="w-full bg-black/60 border border-white/10 rounded-lg px-1.5 py-1 text-[11px] text-neutral-200 focus:outline-none my-1"
                   />
-                  <span className="text-[9px] text-neutral-500 text-center font-mono">IST Strict Check</span>
+                  <span className="text-[9px] text-neutral-500 text-center font-mono">IST Strict</span>
                 </div>
 
-                {/* GitHub Handle */}
                 <div className="bg-neutral-900 border border-white/10 rounded-2xl p-2.5 flex flex-col justify-between">
                   <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1">
                     <GitBranch className="w-3 h-3" /> GitHub
@@ -587,11 +629,11 @@ export default function Home() {
                     placeholder="Username"
                     className="w-full bg-black/60 border border-white/10 rounded-lg px-1.5 py-1 text-[11px] text-neutral-200 focus:outline-none my-1"
                   />
-                  <span className="text-[9px] text-neutral-500 text-center font-mono">Daily Push Check</span>
+                  <span className="text-[9px] text-neutral-500 text-center font-mono">Daily Push</span>
                 </div>
               </section>
 
-              {/* Task Add Form */}
+              {/* Task Form */}
               <form onSubmit={addTask} className="space-y-3 mb-6 bg-neutral-900/70 border border-white/10 p-3.5 rounded-3xl shadow-lg">
                 <input
                   type="text"
@@ -647,7 +689,7 @@ export default function Home() {
                 </button>
               </form>
 
-              {/* Task List */}
+              {/* Tasks List */}
               <div className="space-y-2.5">
                 <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 px-1">Today's Focus</h3>
 
@@ -716,7 +758,6 @@ export default function Home() {
                           </div>
                         </div>
 
-                        {/* LeetCode Verification Button */}
                         {task.category === 'leetcode' && !task.is_completed && (
                           <button
                             onClick={(e) => verifyLeetCode(task.id, e)}
@@ -728,7 +769,6 @@ export default function Home() {
                           </button>
                         )}
 
-                        {/* GitHub Verification Button */}
                         {task.category === 'github' && !task.is_completed && (
                           <button
                             onClick={(e) => verifyGitHub(task.id, e)}
@@ -747,7 +787,6 @@ export default function Home() {
             </>
           )}
 
-          {/* Upcoming Tab */}
           {activeTab === 'upcoming' && (
             <section className="space-y-2.5">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 px-1">Scheduled Milestones</h3>
@@ -769,7 +808,6 @@ export default function Home() {
             </section>
           )}
 
-          {/* Records Tab */}
           {activeTab === 'history' && (
             <section className="space-y-2">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 px-1">Completed History</h3>
@@ -784,9 +822,7 @@ export default function Home() {
         </>
       )}
 
-      {/* ========================================================
-          MODULE 2: BAZAAR (POCKET SHOPPING VAULT)
-      ======================================================== */}
+      {/* MODULE 2: BAZAAR */}
       {currentModule === 'bazaar' && (
         <section className="space-y-4">
           <div className="flex items-center justify-between px-1">
@@ -794,7 +830,7 @@ export default function Home() {
               <h2 className="text-sm font-bold text-white flex items-center gap-1.5">
                 <ShoppingBag className="w-4 h-4 text-emerald-400" /> Bazaar Pocket Vault
               </h2>
-              <p className="text-[10px] text-neutral-400">Ghar se likho, dukaan par ek tap me tick karo</p>
+              <p className="text-[10px] text-neutral-400">Ghar se note karo, dukaan par tick karo</p>
             </div>
             {shoppingItems.some(i => i.is_bought) && (
               <button
@@ -806,11 +842,10 @@ export default function Home() {
             )}
           </div>
 
-          {/* Quick Input Bar */}
           <form onSubmit={addShoppingItem} className="flex gap-2">
             <input
               type="text"
-              placeholder="Item ka naam likho (e.g. Doodh, PVC pipe)..."
+              placeholder="Item ka naam (e.g. Doodh, PVC pipe)..."
               value={newShoppingItem}
               onChange={(e) => setNewShoppingItem(e.target.value)}
               className="flex-1 bg-neutral-900 border border-white/10 rounded-2xl px-3.5 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -823,11 +858,10 @@ export default function Home() {
             </button>
           </form>
 
-          {/* Items Checklist */}
           <div className="space-y-2">
             {shoppingItems.length === 0 ? (
               <div className="text-center py-10 bg-neutral-900/30 border border-white/5 rounded-3xl">
-                <p className="text-xs text-neutral-500">Shopping list khali hai. Jo khareedna hai yaha note kar lo!</p>
+                <p className="text-xs text-neutral-500">Shopping list khali hai. Jo khareedna hai yaha add karo!</p>
               </div>
             ) : (
               shoppingItems.map(item => (
@@ -835,9 +869,7 @@ export default function Home() {
                   key={item.id}
                   onClick={() => toggleShoppingItem(item)}
                   className={`p-3 rounded-2xl border transition-all flex items-center justify-between cursor-pointer ${
-                    item.is_bought 
-                      ? 'bg-neutral-900/30 border-white/5 opacity-50' 
-                      : 'bg-neutral-900/80 border-white/10 shadow-sm'
+                    item.is_bought ? 'bg-neutral-900/30 border-white/5 opacity-50' : 'bg-neutral-900/80 border-white/10'
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -857,12 +889,9 @@ export default function Home() {
         </section>
       )}
 
-      {/* ========================================================
-          MODULE 3: KHAATA (UDHAR-JAMA LEDGER)
-      ======================================================== */}
+      {/* MODULE 3: KHAATA */}
       {currentModule === 'khaata' && (
         <section className="space-y-4">
-          {/* Net Balance Overview Cards */}
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-neutral-900/80 border border-emerald-500/20 rounded-2xl p-3.5">
               <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-semibold mb-1">
@@ -879,7 +908,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* New Record Form */}
           <form onSubmit={addKhaataEntry} className="space-y-2.5 bg-neutral-900/60 border border-white/10 p-3.5 rounded-3xl">
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -931,7 +959,7 @@ export default function Home() {
               </div>
               <input
                 type="text"
-                placeholder="Kyun diye / Kis cheez ke?"
+                placeholder="Note / Kis cheez ke?"
                 value={khaataNote}
                 onChange={(e) => setKhaataNote(e.target.value)}
                 className="bg-black/50 border border-white/10 rounded-xl px-3 py-1.5 text-white focus:outline-none"
@@ -946,13 +974,12 @@ export default function Home() {
             </button>
           </form>
 
-          {/* Khaata Entries List */}
           <div className="space-y-2">
             <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 px-1">Active Ledger</h3>
 
             {khaataRecords.length === 0 ? (
               <div className="text-center py-10 bg-neutral-900/30 border border-white/5 rounded-3xl">
-                <p className="text-xs text-neutral-500">Khaata ekdum clear hai! Koi lene-dene ka hisaab pending nahi.</p>
+                <p className="text-xs text-neutral-500">Khaata clear hai! Koi hisaab pending nahi.</p>
               </div>
             ) : (
               khaataRecords.map(record => {
@@ -1016,7 +1043,7 @@ export default function Home() {
         </section>
       )}
 
-      {/*  Bottom Sheet: Edit Scheduled Task */}
+      {/* Edit Milestone Modal */}
       {editingTask && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
           <div className="bg-neutral-900 border border-white/15 w-full max-w-sm rounded-3xl p-5 space-y-4 shadow-2xl">
@@ -1080,6 +1107,7 @@ export default function Home() {
                   }).eq('id', editingTask.id);
                   setEditingTask(null);
                   triggerBanner('Updated', 'Milestone save ho gaya.', 'success');
+                  fetchAllData();
                 }}
                 className="flex-1 bg-amber-500 text-black font-bold py-2.5 rounded-xl transition text-xs"
               >

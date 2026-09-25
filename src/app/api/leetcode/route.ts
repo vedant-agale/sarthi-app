@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         query,
-        variables: { username, limit: 5 },
+        variables: { username: username.trim(), limit: 20 },
       }),
       cache: 'no-store',
     });
@@ -33,32 +33,37 @@ export async function GET(request: Request) {
     const submissions = data?.data?.recentAcSubmissionList || [];
 
     if (submissions.length === 0) {
-      return NextResponse.json({ verified: false, message: 'LeetCode par koi accepted submission nahi mila!' });
+      return NextResponse.json({ verified: false, message: 'LeetCode profile par koi AC submission nahi mila!' });
     }
 
-    // Convert to Indian Standard Time (IST) Date comparison
-    const getISTDate = (timestampMs: number) =>
-      new Date(timestampMs).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const now = Date.now();
+    const getISTDate = (ms: number) =>
+      new Date(ms).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const todayIST = getISTDate(now);
 
-    const todayIST = getISTDate(Date.now());
-    const todaySub = submissions.find((sub: any) => {
-      const subIST = getISTDate(parseInt(sub.timestamp) * 1000);
-      return subIST === todayIST;
+    // Dual-Check: Pichle 24 ghante me solve hua ho YA aaj ki IST date ho
+    const verifiedSub = submissions.find((sub: any) => {
+      const subTime = parseInt(sub.timestamp) * 1000;
+      const diffHours = (now - subTime) / (1000 * 60 * 60);
+      const isToday = getISTDate(subTime) === todayIST;
+      return diffHours <= 24 || isToday;
     });
 
-    if (todaySub) {
+    if (verifiedSub) {
       return NextResponse.json({
         verified: true,
-        problem: todaySub.title,
-        message: `Verified! Aaj ka solve mil gaya: "${todaySub.title}" 🔥`
+        problem: verifiedSub.title,
+        message: `Verified! Solve mil gaya: "${verifiedSub.title}" 🔥`
       });
     } else {
+      const latest = submissions[0];
+      const hoursAgo = Math.round((now - parseInt(latest.timestamp) * 1000) / (1000 * 60 * 60));
       return NextResponse.json({
         verified: false,
-        message: 'Purane submissions hain, par AAJ ka koi fresh question solve nahi mila! Pehle code karo.'
+        message: `Aakhri solve "${latest.title}" lagbhag ${hoursAgo} ghante pehle ka tha. Aaj ka fresh solve nahi mila!`
       });
     }
   } catch (err) {
-    return NextResponse.json({ error: 'LeetCode connect nahi ho saka' }, { status: 500 });
+    return NextResponse.json({ error: 'LeetCode se contact nahi ho saka' }, { status: 500 });
   }
 }
