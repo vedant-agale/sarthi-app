@@ -301,7 +301,7 @@ export default function Home() {
   };
 
   // Direct Client-Side GitHub Verify (No serverless proxy bug)
-  const verifyGitHub = async (taskId: string, e: React.MouseEvent) => {
+ const verifyGitHub = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!githubUsername.trim()) {
       triggerBanner('Username Missing', 'GitHub username fill karo!', 'error');
@@ -310,35 +310,16 @@ export default function Home() {
 
     setVerifyingGithubId(taskId);
     try {
-      const res = await fetch(`https://api.github.com/users/${githubUsername.trim()}/events`, {
-        headers: { 'Accept': 'application/vnd.github.v3+json' },
-      });
+      const res = await fetch(`/api/github?username=${githubUsername.trim()}`);
+      const data = await res.json();
 
-      if (!res.ok) {
-        triggerBanner('GitHub Error', 'Account nahi mila ya rate limit cross hui.', 'error');
-        return;
-      }
-
-      const events = await res.json();
-      const now = Date.now();
-      const getISTDate = (d: string) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-      const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-
-      const todayPush = Array.isArray(events) && events.find((ev: any) => {
-        if (ev.type !== 'PushEvent') return false;
-        const evTime = new Date(ev.created_at).getTime();
-        const diffHours = (now - evTime) / (1000 * 60 * 60);
-        return diffHours <= 24 || getISTDate(ev.created_at) === todayIST;
-      });
-
-      if (todayPush) {
+      if (data.verified) {
         confetti({ particleCount: 90, spread: 70, origin: { y: 0.7 } });
-        const repo = todayPush.repo?.name || 'repository';
-        triggerBanner('Verified! 🚀', `Aaj ka push detect hua: ${repo}`, 'success');
+        triggerBanner('Verified! 🚀', data.message, 'success');
         await supabase.from('tasks').update({ is_completed: true, completed_at: new Date().toISOString() }).eq('id', taskId);
         fetchAllData();
       } else {
-        triggerBanner('No Commits Found', 'Aaj GitHub par koi commit/push nahi mila!', 'error');
+        triggerBanner('Not Verified', data.message, 'error');
       }
     } catch {
       triggerBanner('Network Error', 'GitHub se connect nahi ho paya.', 'error');
@@ -346,7 +327,6 @@ export default function Home() {
       setVerifyingGithubId(null);
     }
   };
-
   // Jap Counter
   const handleJapIncrement = async () => {
     const nextCount = japCount + 1;
