@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         query,
-        variables: { username, limit: 1 },
+        variables: { username, limit: 5 },
       }),
       cache: 'no-store',
     });
@@ -33,22 +33,32 @@ export async function GET(request: Request) {
     const submissions = data?.data?.recentAcSubmissionList || [];
 
     if (submissions.length === 0) {
-      return NextResponse.json({ verified: false, message: 'Koi submission nahi mila!' });
+      return NextResponse.json({ verified: false, message: 'LeetCode par koi accepted submission nahi mila!' });
     }
 
-    // Check if the latest submission was today (last 24 hours)
-    const latestSubTime = parseInt(submissions[0].timestamp) * 1000;
-    const now = Date.now();
-    const isToday = (now - latestSubTime) < (24 * 60 * 60 * 1000);
+    // Convert to Indian Standard Time (IST) Date comparison
+    const getISTDate = (timestampMs: number) =>
+      new Date(timestampMs).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
-    return NextResponse.json({
-      verified: isToday,
-      problem: submissions[0].title,
-      message: isToday 
-        ? `Submission mil gaya: "${submissions[0].title}"! Sahi jaa rahe ho!` 
-        : 'Aaj ka koi fresh submission nahi mila. Pehle question solve kar!'
+    const todayIST = getISTDate(Date.now());
+    const todaySub = submissions.find((sub: any) => {
+      const subIST = getISTDate(parseInt(sub.timestamp) * 1000);
+      return subIST === todayIST;
     });
+
+    if (todaySub) {
+      return NextResponse.json({
+        verified: true,
+        problem: todaySub.title,
+        message: `Verified! Aaj ka solve mil gaya: "${todaySub.title}" 🔥`
+      });
+    } else {
+      return NextResponse.json({
+        verified: false,
+        message: 'Purane submissions hain, par AAJ ka koi fresh question solve nahi mila! Pehle code karo.'
+      });
+    }
   } catch (err) {
-    return NextResponse.json({ error: 'LeetCode se connect nahi ho paya' }, { status: 500 });
+    return NextResponse.json({ error: 'LeetCode connect nahi ho saka' }, { status: 500 });
   }
 }
