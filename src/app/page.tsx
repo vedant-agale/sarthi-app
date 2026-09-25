@@ -8,26 +8,27 @@ import {
   Plus, 
   Heart, 
   Code2, 
-  GitBranch,
+  GitBranch, 
   RefreshCw, 
   Sparkles, 
   Trash2, 
   CheckCircle2, 
-  AlertCircle,
-  X,
-  Calendar,
-  Clock,
-  History,
-  Bell,
-  RotateCcw,
-  Hourglass,
-  Edit3,
-  SlidersHorizontal,
-  Lock,
-  ShoppingBag,
-  Wallet,
-  ArrowUpRight,
-  ArrowDownLeft
+  AlertCircle, 
+  X, 
+  Calendar, 
+  Clock, 
+  History, 
+  RotateCcw, 
+  Hourglass, 
+  Edit3, 
+  SlidersHorizontal, 
+  Lock, 
+  ShoppingBag, 
+  Wallet, 
+  ArrowUpRight, 
+  ArrowDownLeft,
+  WifiOff,
+  Wifi
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -58,6 +59,14 @@ interface KhaataRecord {
   is_settled: boolean;
 }
 
+interface OfflineAction {
+  id: string;
+  type: 'insert' | 'update' | 'delete';
+  table: 'tasks' | 'shopping_items' | 'khaata_records';
+  payload?: any;
+  matchId?: string;
+}
+
 interface BannerNotification {
   title: string;
   message: string;
@@ -86,6 +95,7 @@ const MANUAL_CATEGORIES = [
 export default function Home() {
   const [currentModule, setCurrentModule] = useState<'routine' | 'bazaar' | 'khaata'>('routine');
   const [activeTab, setActiveTab] = useState<'today' | 'upcoming' | 'history'>('today');
+  const [isOnline, setIsOnline] = useState(true);
 
   const getDeviceDate = () => new Date().toISOString().split('T')[0];
   const getDeviceTime = () => {
@@ -139,6 +149,81 @@ export default function Home() {
 
   const isProtectedTask = (task: Task) => DEFAULT_CATEGORIES.includes(task.category);
 
+  // ==========================================
+  // OFFLINE QUEUE & SYNC ENGINE
+  // ==========================================
+  const enqueueOfflineAction = (action: OfflineAction) => {
+    if (typeof window === 'undefined') return;
+    const existing = JSON.parse(localStorage.getItem('sarthi_offline_queue') || '[]');
+    existing.push(action);
+    localStorage.setItem('sarthi_offline_queue', JSON.stringify(existing));
+  };
+
+  const syncOfflineQueue = async () => {
+    if (typeof window === 'undefined') return;
+    const rawQueue = localStorage.getItem('sarthi_offline_queue');
+    if (!rawQueue) return;
+
+    const queue: OfflineAction[] = JSON.parse(rawQueue);
+    if (queue.length === 0) return;
+
+    triggerBanner('Syncing Data', `${queue.length} offline changes sync ho rahe hain...`, 'info');
+
+    for (const act of queue) {
+      try {
+        if (act.type === 'insert') {
+          await supabase.from(act.table).insert(act.payload);
+        } else if (act.type === 'update' && act.matchId) {
+          await supabase.from(act.table).update(act.payload).eq('id', act.matchId);
+        } else if (act.type === 'delete' && act.matchId) {
+          await supabase.from(act.table).delete().eq('id', act.matchId);
+        }
+      } catch (err) {
+        console.error('Queue sync item error:', err);
+      }
+    }
+
+    localStorage.removeItem('sarthi_offline_queue');
+    triggerBanner('All Synced! 🌐', 'Cloud aur sabhi devices sync ho gaye.', 'success');
+    fetchAllData();
+  };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsOnline(navigator.onLine);
+
+      const handleOnline = () => {
+        setIsOnline(true);
+        triggerBanner('Online Reconnected', 'Data sync shuru ho gaya...', 'success');
+        syncOfflineQueue();
+      };
+
+      const handleOffline = () => {
+        setIsOnline(false);
+        triggerBanner('Offline Mode Active', 'Aap offline hain. Data phone me save hoga!', 'info');
+      };
+
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+
+      // Cached load for zero wait offline start
+      const cachedTasks = localStorage.getItem('sarthi_tasks_cache');
+      if (cachedTasks) setTasks(JSON.parse(cachedTasks));
+
+      return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      };
+    }
+  }, []);
+
+  const saveTasksState = (newTasks: Task[]) => {
+    setTasks(newTasks);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sarthi_tasks_cache', JSON.stringify(newTasks));
+    }
+  };
+
   // Routine Auto Process
   const processDailyLifecycle = async (allTasks: Task[]) => {
     const today = getDeviceDate();
@@ -170,18 +255,22 @@ export default function Home() {
   };
 
   const fetchAllData = async () => {
-    const [tRes, sRes, kRes] = await Promise.all([
-      supabase.from('tasks').select('*').order('created_at', { ascending: false }),
-      supabase.from('shopping_items').select('*').order('created_at', { ascending: false }),
-      supabase.from('khaata_records').select('*').order('created_at', { ascending: false })
-    ]);
+    try {
+      const [tRes, sRes, kRes] = await Promise.all([
+        supabase.from('tasks').select('*').order('created_at', { ascending: false }),
+        supabase.from('shopping_items').select('*').order('created_at', { ascending: false }),
+        supabase.from('khaata_records').select('*').order('created_at', { ascending: false })
+      ]);
 
-    if (tRes.data) {
-      setTasks(tRes.data);
-      await processDailyLifecycle(tRes.data);
+      if (tRes.data) {
+        saveTasksState(tRes.data);
+        await processDailyLifecycle(tRes.data);
+      }
+      if (sRes.data) setShoppingItems(sRes.data);
+      if (kRes.data) setKhaataRecords(kRes.data);
+    } catch {
+      // Gracefully silent when offline
     }
-    if (sRes.data) setShoppingItems(sRes.data);
-    if (kRes.data) setKhaataRecords(kRes.data);
   };
 
   useEffect(() => {
@@ -191,7 +280,7 @@ export default function Home() {
       .channel('sarthi-global-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
         supabase.from('tasks').select('*').order('created_at', { ascending: false }).then(({ data }) => {
-          if (data) setTasks(data);
+          if (data) saveTasksState(data);
         });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items' }, () => {
@@ -211,28 +300,34 @@ export default function Home() {
     };
   }, []);
 
-  // 1. Task Operations
+  // 1. Task Operations (Optimistic + Offline Safe)
   const addTask = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalTitle = newTaskTitle.trim() ? newTaskTitle.trim() : category;
 
-    const { error } = await supabase.from('tasks').insert([{ 
-      title: finalTitle, 
+    const newTaskEntry: Task = {
+      id: crypto.randomUUID ? crypto.randomUUID() : 'offline_' + Date.now(),
+      title: finalTitle,
       category: category.toLowerCase().replace(/[^a-z0-9]/g, '_'),
       target_date: targetDate,
-      due_time: dueTime || null
-    }]);
+      due_time: dueTime || null,
+      is_completed: false,
+      carry_forward_count: 0
+    };
 
-    if (error) {
-      triggerBanner('Save Failed', error.message, 'error');
-      return;
-    }
-
+    // Optimistic UI Update
+    saveTasksState([newTaskEntry, ...tasks]);
     setNewTaskTitle('');
     setDueTime(getDeviceTime());
     setTargetDate(getDeviceDate());
-    triggerBanner('Saved!', `"${finalTitle}" schedule ho gaya.`, 'success');
-    fetchAllData();
+    triggerBanner(navigator.onLine ? 'Saved!' : 'Saved (Offline)', `"${finalTitle}" schedule ho gaya.`, 'success');
+
+    if (navigator.onLine) {
+      const { error } = await supabase.from('tasks').insert([newTaskEntry]);
+      if (error) enqueueOfflineAction({ id: newTaskEntry.id, type: 'insert', table: 'tasks', payload: newTaskEntry });
+    } else {
+      enqueueOfflineAction({ id: newTaskEntry.id, type: 'insert', table: 'tasks', payload: newTaskEntry });
+    }
   };
 
   const deleteTask = async (id: string) => {
@@ -244,12 +339,18 @@ export default function Home() {
       return;
     }
 
-    await supabase.from('tasks').delete().eq('id', id);
+    saveTasksState(tasks.filter(t => t.id !== id));
     setDeletingId(null);
     setActiveDragId(null);
     setDragOffset(0);
     setEditingTask(null);
-    fetchAllData();
+
+    if (navigator.onLine) {
+      const { error } = await supabase.from('tasks').delete().eq('id', id);
+      if (error) enqueueOfflineAction({ id, type: 'delete', table: 'tasks', matchId: id });
+    } else {
+      enqueueOfflineAction({ id, type: 'delete', table: 'tasks', matchId: id });
+    }
   };
 
   const toggleGeneralTask = async (task: Task) => {
@@ -267,19 +368,33 @@ export default function Home() {
       return;
     }
 
-    const updated = !task.is_completed;
-    if (updated) confetti({ particleCount: 60, spread: 60, origin: { y: 0.8 } });
+    const updatedStatus = !task.is_completed;
+    if (updatedStatus) confetti({ particleCount: 60, spread: 60, origin: { y: 0.8 } });
 
-    await supabase.from('tasks').update({ 
-      is_completed: updated,
-      completed_at: updated ? new Date().toISOString() : null
-    }).eq('id', task.id);
-    fetchAllData();
+    // Optimistic UI Update (Turant sorted bottom par jayega)
+    const updatedTasks = tasks.map(t => 
+      t.id === task.id ? { ...t, is_completed: updatedStatus, completed_at: updatedStatus ? new Date().toISOString() : null } : t
+    );
+    saveTasksState(updatedTasks);
+
+    const updatePayload = { is_completed: updatedStatus, completed_at: updatedStatus ? new Date().toISOString() : null };
+
+    if (navigator.onLine) {
+      const { error } = await supabase.from('tasks').update(updatePayload).eq('id', task.id);
+      if (error) enqueueOfflineAction({ id: task.id, type: 'update', table: 'tasks', payload: updatePayload, matchId: task.id });
+    } else {
+      enqueueOfflineAction({ id: task.id, type: 'update', table: 'tasks', payload: updatePayload, matchId: task.id });
+    }
   };
 
   // LeetCode Verify
   const verifyLeetCode = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!navigator.onLine) {
+      triggerBanner('Offline', 'LeetCode check karne ke liye internet chahiye!', 'error');
+      return;
+    }
+
     setVerifyingId(taskId);
     try {
       const res = await fetch(`/api/leetcode?username=${leetcodeUsername.trim()}`);
@@ -288,8 +403,10 @@ export default function Home() {
       if (data.verified) {
         confetti({ particleCount: 90, spread: 70, origin: { y: 0.7 } });
         triggerBanner('Verified! 🔥', data.message, 'success');
+        
+        const updated = tasks.map(t => t.id === taskId ? { ...t, is_completed: true, completed_at: new Date().toISOString() } : t);
+        saveTasksState(updated);
         await supabase.from('tasks').update({ is_completed: true, completed_at: new Date().toISOString() }).eq('id', taskId);
-        fetchAllData();
       } else {
         triggerBanner('Not Verified', data.message || 'Aaj koi solve nahi mila.', 'error');
       }
@@ -300,9 +417,13 @@ export default function Home() {
     }
   };
 
-  // Direct Client-Side GitHub Verify (No serverless proxy bug)
- const verifyGitHub = async (taskId: string, e: React.MouseEvent) => {
+  // GitHub Verify
+  const verifyGitHub = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!navigator.onLine) {
+      triggerBanner('Offline', 'GitHub heatmap check karne ke liye internet chahiye!', 'error');
+      return;
+    }
     if (!githubUsername.trim()) {
       triggerBanner('Username Missing', 'GitHub username fill karo!', 'error');
       return;
@@ -316,8 +437,10 @@ export default function Home() {
       if (data.verified) {
         confetti({ particleCount: 90, spread: 70, origin: { y: 0.7 } });
         triggerBanner('Verified! 🚀', data.message, 'success');
+        
+        const updated = tasks.map(t => t.id === taskId ? { ...t, is_completed: true, completed_at: new Date().toISOString() } : t);
+        saveTasksState(updated);
         await supabase.from('tasks').update({ is_completed: true, completed_at: new Date().toISOString() }).eq('id', taskId);
-        fetchAllData();
       } else {
         triggerBanner('Not Verified', data.message, 'error');
       }
@@ -327,6 +450,7 @@ export default function Home() {
       setVerifyingGithubId(null);
     }
   };
+
   // Jap Counter
   const handleJapIncrement = async () => {
     const nextCount = japCount + 1;
@@ -337,40 +461,70 @@ export default function Home() {
       triggerBanner('Har Har Mahadev! 🙏', '108 Naam Jap pure hue!', 'success');
       const japTask = tasks.find(t => t.category === 'naam_jap' && !t.is_completed);
       if (japTask) {
-        await supabase.from('tasks').update({ is_completed: true, completed_at: new Date().toISOString() }).eq('id', japTask.id);
-        fetchAllData();
+        const updated = tasks.map(t => t.id === japTask.id ? { ...t, is_completed: true, completed_at: new Date().toISOString() } : t);
+        saveTasksState(updated);
+
+        if (navigator.onLine) {
+          await supabase.from('tasks').update({ is_completed: true, completed_at: new Date().toISOString() }).eq('id', japTask.id);
+        } else {
+          enqueueOfflineAction({
+            id: japTask.id,
+            type: 'update',
+            table: 'tasks',
+            payload: { is_completed: true, completed_at: new Date().toISOString() },
+            matchId: japTask.id
+          });
+        }
       }
     }
   };
 
-  // 2. Shopping Operations (With Error Checking)
+  // 2. Shopping Operations (Offline Safe)
   const addShoppingItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newShoppingItem.trim()) return;
 
-    const { error } = await supabase.from('shopping_items').insert([{ title: newShoppingItem.trim() }]);
-    if (error) {
-      triggerBanner('Database Error', 'Pehle Supabase me SQL script run karo! ' + error.message, 'error');
-      return;
-    }
+    const newItem: ShoppingItem = {
+      id: crypto.randomUUID ? crypto.randomUUID() : 'offline_s_' + Date.now(),
+      title: newShoppingItem.trim(),
+      is_bought: false
+    };
 
+    setShoppingItems([newItem, ...shoppingItems]);
     setNewShoppingItem('');
-    triggerBanner('Added to List', 'Bazaar me khareedne ke liye save hua.', 'success');
-    fetchAllData();
+    triggerBanner('Added to List', 'Bazaar list me note ho gaya.', 'success');
+
+    if (navigator.onLine) {
+      const { error } = await supabase.from('shopping_items').insert([newItem]);
+      if (error) enqueueOfflineAction({ id: newItem.id, type: 'insert', table: 'shopping_items', payload: newItem });
+    } else {
+      enqueueOfflineAction({ id: newItem.id, type: 'insert', table: 'shopping_items', payload: newItem });
+    }
   };
 
   const toggleShoppingItem = async (item: ShoppingItem) => {
-    await supabase.from('shopping_items').update({ is_bought: !item.is_bought }).eq('id', item.id);
-    fetchAllData();
+    const updated = shoppingItems.map(i => i.id === item.id ? { ...i, is_bought: !i.is_bought } : i);
+    setShoppingItems(updated);
+
+    if (navigator.onLine) {
+      const { error } = await supabase.from('shopping_items').update({ is_bought: !item.is_bought }).eq('id', item.id);
+      if (error) enqueueOfflineAction({ id: item.id, type: 'update', table: 'shopping_items', payload: { is_bought: !item.is_bought }, matchId: item.id });
+    } else {
+      enqueueOfflineAction({ id: item.id, type: 'update', table: 'shopping_items', payload: { is_bought: !item.is_bought }, matchId: item.id });
+    }
   };
 
   const clearBoughtItems = async () => {
-    await supabase.from('shopping_items').delete().eq('is_bought', true);
-    triggerBanner('Cleared', 'Khareede hue items list se remove ho gaye.', 'info');
-    fetchAllData();
+    const remaining = shoppingItems.filter(i => !i.is_bought);
+    setShoppingItems(remaining);
+    triggerBanner('Cleared', 'Khareede hue items saaf kar diye.', 'info');
+
+    if (navigator.onLine) {
+      await supabase.from('shopping_items').delete().eq('is_bought', true);
+    }
   };
 
-  // 3. Khaata Operations (With Error Checking)
+  // 3. Khaata Operations (Offline Safe)
   const addKhaataEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!khaataName.trim() || !khaataAmount.trim()) {
@@ -378,36 +532,52 @@ export default function Home() {
       return;
     }
 
-    const { error } = await supabase.from('khaata_records').insert([{
+    const newRecord: KhaataRecord = {
+      id: crypto.randomUUID ? crypto.randomUUID() : 'offline_k_' + Date.now(),
       person_name: khaataName.trim(),
       amount: parseFloat(khaataAmount),
       type: khaataType,
       due_date: khaataDueDate || null,
-      note: khaataNote.trim() || null
-    }]);
+      note: khaataNote.trim() || null,
+      is_settled: false
+    };
 
-    if (error) {
-      triggerBanner('Database Error', 'Pehle Supabase me SQL script run karo! ' + error.message, 'error');
-      return;
-    }
-
+    setKhaataRecords([newRecord, ...khaataRecords]);
     setKhaataName('');
     setKhaataAmount('');
     setKhaataDueDate('');
     setKhaataNote('');
     triggerBanner('Record Saved', 'Hisaab diary me save ho gaya.', 'success');
-    fetchAllData();
+
+    if (navigator.onLine) {
+      const { error } = await supabase.from('khaata_records').insert([newRecord]);
+      if (error) enqueueOfflineAction({ id: newRecord.id, type: 'insert', table: 'khaata_records', payload: newRecord });
+    } else {
+      enqueueOfflineAction({ id: newRecord.id, type: 'insert', table: 'khaata_records', payload: newRecord });
+    }
   };
 
   const toggleKhaataSettled = async (record: KhaataRecord) => {
-    await supabase.from('khaata_records').update({ is_settled: !record.is_settled }).eq('id', record.id);
-    fetchAllData();
+    const updated = khaataRecords.map(r => r.id === record.id ? { ...r, is_settled: !r.is_settled } : r);
+    setKhaataRecords(updated);
+
+    if (navigator.onLine) {
+      const { error } = await supabase.from('khaata_records').update({ is_settled: !record.is_settled }).eq('id', record.id);
+      if (error) enqueueOfflineAction({ id: record.id, type: 'update', table: 'khaata_records', payload: { is_settled: !record.is_settled }, matchId: record.id });
+    } else {
+      enqueueOfflineAction({ id: record.id, type: 'update', table: 'khaata_records', payload: { is_settled: !record.is_settled }, matchId: record.id });
+    }
   };
 
   const deleteKhaataRecord = async (id: string) => {
-    await supabase.from('khaata_records').delete().eq('id', id);
+    setKhaataRecords(khaataRecords.filter(r => r.id !== id));
     triggerBanner('Removed', 'Record remove kar diya gaya.', 'info');
-    fetchAllData();
+
+    if (navigator.onLine) {
+      await supabase.from('khaata_records').delete().eq('id', id);
+    } else {
+      enqueueOfflineAction({ id, type: 'delete', table: 'khaata_records', matchId: id });
+    }
   };
 
   // Gestures
@@ -469,7 +639,18 @@ export default function Home() {
   }, [khaataRecords]);
 
   const todayStr = useMemo(() => getDeviceDate(), []);
-  const todayTasks = tasks.filter(t => t.target_date === todayStr);
+
+  // 🟢 SMART PRIORITY SORTING: Incomplete at TOP, Completed at BOTTOM
+  const sortedTodayTasks = useMemo(() => {
+    const list = tasks.filter(t => t.target_date === todayStr);
+    return list.sort((a, b) => {
+      if (a.is_completed !== b.is_completed) {
+        return a.is_completed ? 1 : -1; // Uncompleted stay up, completed sink down
+      }
+      return 0;
+    });
+  }, [tasks, todayStr]);
+
   const upcomingTasks = tasks.filter(t => t.target_date > todayStr);
   const historyTasks = tasks.filter(t => t.is_completed);
 
@@ -508,10 +689,17 @@ export default function Home() {
           <span className="text-[10px] font-bold tracking-widest uppercase text-amber-500">Autonomous Assistant</span>
           <h1 className="text-2xl font-black tracking-tight text-white">SARTHI</h1>
         </div>
-        <div className="flex items-center gap-1.5 bg-neutral-900/80 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-full text-xs">
-          <Flame className="w-4 h-4 text-orange-500 fill-orange-500" />
-          <span className="font-semibold text-white">{todayTasks.filter(t => t.is_completed).length}</span>
-          <span className="text-neutral-500">/{todayTasks.length}</span>
+        <div className="flex items-center gap-2">
+          {!isOnline && (
+            <div className="flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2.5 py-1 rounded-full text-[10px] font-bold">
+              <WifiOff className="w-3 h-3" /> Offline
+            </div>
+          )}
+          <div className="flex items-center gap-1.5 bg-neutral-900/80 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-full text-xs">
+            <Flame className="w-4 h-4 text-orange-500 fill-orange-500" />
+            <span className="font-semibold text-white">{sortedTodayTasks.filter(t => t.is_completed).length}</span>
+            <span className="text-neutral-500">/{sortedTodayTasks.length}</span>
+          </div>
         </div>
       </header>
 
@@ -669,11 +857,14 @@ export default function Home() {
                 </button>
               </form>
 
-              {/* Tasks List */}
+              {/* Tasks List: Smart Priority Sorted */}
               <div className="space-y-2.5">
-                <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 px-1">Today's Focus</h3>
+                <div className="flex items-center justify-between px-1">
+                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Today's Focus</h3>
+                  <span className="text-[10px] text-neutral-500 font-mono">Pending First</span>
+                </div>
 
-                {todayTasks.map((task) => {
+                {sortedTodayTasks.map((task) => {
                   const isItemDragging = activeDragId === task.id;
                   const isItemDeleting = deletingId === task.id;
                   const offset = isItemDragging ? dragOffset : 0;
@@ -704,8 +895,8 @@ export default function Home() {
                           transform: `translateX(${offset}px)`,
                           transition: isItemDragging ? 'none' : 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)'
                         }}
-                        className={`relative z-10 p-3 rounded-2xl border flex items-center justify-between cursor-pointer ${
-                          task.is_completed ? 'bg-neutral-900/90 border-white/5 opacity-50' : 'bg-neutral-900 border-white/10'
+                        className={`relative z-10 p-3 rounded-2xl border flex items-center justify-between cursor-pointer transition-colors duration-200 ${
+                          task.is_completed ? 'bg-neutral-900/40 border-white/5 opacity-50' : 'bg-neutral-900 border-white/10'
                         }`}
                       >
                         <div className="flex items-center gap-2.5 flex-1 mr-2 min-w-0">
@@ -1080,14 +1271,30 @@ export default function Home() {
               )}
               <button 
                 onClick={async () => {
-                  await supabase.from('tasks').update({
-                    title: editingTask.title,
-                    target_date: editingTask.target_date,
-                    due_time: editingTask.due_time
-                  }).eq('id', editingTask.id);
+                  const updated = tasks.map(t => t.id === editingTask.id ? editingTask : t);
+                  saveTasksState(updated);
                   setEditingTask(null);
                   triggerBanner('Updated', 'Milestone save ho gaya.', 'success');
-                  fetchAllData();
+
+                  if (navigator.onLine) {
+                    await supabase.from('tasks').update({
+                      title: editingTask.title,
+                      target_date: editingTask.target_date,
+                      due_time: editingTask.due_time
+                    }).eq('id', editingTask.id);
+                  } else {
+                    enqueueOfflineAction({
+                      id: editingTask.id,
+                      type: 'update',
+                      table: 'tasks',
+                      payload: {
+                        title: editingTask.title,
+                        target_date: editingTask.target_date,
+                        due_time: editingTask.due_time
+                      },
+                      matchId: editingTask.id
+                    });
+                  }
                 }}
                 className="flex-1 bg-amber-500 text-black font-bold py-2.5 rounded-xl transition text-xs"
               >
