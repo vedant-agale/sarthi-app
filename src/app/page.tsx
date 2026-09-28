@@ -28,7 +28,7 @@ import {
   ArrowUpRight, 
   ArrowDownLeft,
   WifiOff,
-  Wifi
+  Bell
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -128,6 +128,7 @@ export default function Home() {
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [verifyingGithubId, setVerifyingGithubId] = useState<string | null>(null);
   const [banner, setBanner] = useState<BannerNotification | null>(null);
+  const [notificationsAllowed, setNotificationsAllowed] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Gestures
@@ -148,6 +149,56 @@ export default function Home() {
   };
 
   const isProtectedTask = (task: Task) => DEFAULT_CATEGORIES.includes(task.category);
+
+  // ==========================================
+  // NOTIFICATION ENGINE (SERVICE WORKER + DESKTOP)
+  // ==========================================
+  const sendNotification = async (title: string, body: string) => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+
+    // Mobile / PWA standard
+    if ('serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        reg.showNotification(title, {
+          body,
+          icon: '/icon.png',
+          badge: '/icon.png',
+        });
+        return;
+      } catch (err) {
+        console.warn('SW notification fallback to native', err);
+      }
+    }
+
+    // Desktop fallback
+    try {
+      new Notification(title, { body });
+    } catch (e) {
+      console.error('Notification error:', e);
+    }
+  };
+
+  const handleNotificationClick = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      triggerBanner('Not Supported', 'Aapka browser notifications support nahi karta.', 'error');
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        setNotificationsAllowed(true);
+        triggerBanner('Active! 🔔', 'Notifications enable ho gayi hain.', 'success');
+        await sendNotification('SARTHI Alert System Active! 🔔', 'Badhiya! Ab tasks aur 7 PM ke alerts yahi aayenge.');
+      } else {
+        triggerBanner('Permission Denied', 'Browser settings me jaakar notification allow karein.', 'error');
+      }
+    } catch {
+      triggerBanner('Permission Error', 'Notification settings check karein.', 'error');
+    }
+  };
 
   // ==========================================
   // OFFLINE QUEUE & SYNC ENGINE
@@ -191,6 +242,15 @@ export default function Home() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setIsOnline(navigator.onLine);
+      if ('Notification' in window) {
+        setNotificationsAllowed(Notification.permission === 'granted');
+      }
+
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(err => {
+          console.warn('SW registration skipped:', err);
+        });
+      }
 
       const handleOnline = () => {
         setIsOnline(true);
@@ -206,7 +266,6 @@ export default function Home() {
       window.addEventListener('online', handleOnline);
       window.addEventListener('offline', handleOffline);
 
-      // Cached load for zero wait offline start
       const cachedTasks = localStorage.getItem('sarthi_tasks_cache');
       if (cachedTasks) setTasks(JSON.parse(cachedTasks));
 
@@ -224,7 +283,6 @@ export default function Home() {
     }
   };
 
-  // Routine Auto Process
   const processDailyLifecycle = async (allTasks: Task[]) => {
     const today = getDeviceDate();
     const overdueTasks = allTasks.filter(t => !t.is_completed && t.target_date < today);
@@ -273,6 +331,7 @@ export default function Home() {
     }
   };
 
+  // Realtime Listeners & Scheduled Alerts Watcher
   useEffect(() => {
     fetchAllData();
 
@@ -295,18 +354,50 @@ export default function Home() {
       })
       .subscribe();
 
+    let alertedAt7PM = false;
+    const interval = setInterval(() => {
+      const now = new Date();
+      const currentHours = now.getHours();
+      const currentMins = now.getMinutes();
+      const timeString = `${String(currentHours).padStart(2, '0')}:${String(currentMins).padStart(2, '0')}`;
+      const today = now.toISOString().split('T')[0];
+
+      // 7 PM Routine Check
+      if (currentHours === 19 && currentMins === 0 && !alertedAt7PM) {
+        const pendingCount = tasks.filter(t => t.target_date === today && !t.is_completed).length;
+        if (pendingCount > 0) {
+          sendNotification(
+            'SARTHI: Shaam ke 7 Baj Gaye! ⚠️',
+            `Dhyan de! Aaj ke ${pendingCount} zaroori tasks pending hain. Complete karo!`
+          );
+          triggerBanner('Evening Alert! ⚠️', `${pendingCount} tasks bache hain!`, 'error');
+        }
+        alertedAt7PM = true;
+      }
+      if (currentHours !== 19) alertedAt7PM = false;
+
+      // Due time alert
+      tasks.forEach(task => {
+        if (!task.is_completed && task.target_date === today && task.due_time === timeString) {
+          sendNotification('SARTHI Alert! ⏰', `Time ho gaya: "${task.title}" execute karo!`);
+          triggerBanner('Reminder ⏰', task.title, 'info');
+        }
+      });
+    }, 20000);
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(interval);
     };
   }, []);
 
-  // 1. Task Operations (Optimistic + Offline Safe)
+  // 1. Task Operations
   const addTask = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalTitle = newTaskTitle.trim() ? newTaskTitle.trim() : category;
 
     const newTaskEntry: Task = {
-      id: crypto.randomUUID ? crypto.randomUUID() : 'offline_' + Date.now(),
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'offline_' + Date.now(),
       title: finalTitle,
       category: category.toLowerCase().replace(/[^a-z0-9]/g, '_'),
       target_date: targetDate,
@@ -315,7 +406,6 @@ export default function Home() {
       carry_forward_count: 0
     };
 
-    // Optimistic UI Update
     saveTasksState([newTaskEntry, ...tasks]);
     setNewTaskTitle('');
     setDueTime(getDeviceTime());
@@ -371,7 +461,6 @@ export default function Home() {
     const updatedStatus = !task.is_completed;
     if (updatedStatus) confetti({ particleCount: 60, spread: 60, origin: { y: 0.8 } });
 
-    // Optimistic UI Update (Turant sorted bottom par jayega)
     const updatedTasks = tasks.map(t => 
       t.id === task.id ? { ...t, is_completed: updatedStatus, completed_at: updatedStatus ? new Date().toISOString() : null } : t
     );
@@ -421,7 +510,7 @@ export default function Home() {
   const verifyGitHub = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!navigator.onLine) {
-      triggerBanner('Offline', 'GitHub heatmap check karne ke liye internet chahiye!', 'error');
+      triggerBanner('Offline', 'GitHub check karne ke liye internet chahiye!', 'error');
       return;
     }
     if (!githubUsername.trim()) {
@@ -479,13 +568,13 @@ export default function Home() {
     }
   };
 
-  // 2. Shopping Operations (Offline Safe)
+  // 2. Shopping Operations
   const addShoppingItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newShoppingItem.trim()) return;
 
     const newItem: ShoppingItem = {
-      id: crypto.randomUUID ? crypto.randomUUID() : 'offline_s_' + Date.now(),
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'offline_s_' + Date.now(),
       title: newShoppingItem.trim(),
       is_bought: false
     };
@@ -524,7 +613,7 @@ export default function Home() {
     }
   };
 
-  // 3. Khaata Operations (Offline Safe)
+  // 3. Khaata Operations
   const addKhaataEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!khaataName.trim() || !khaataAmount.trim()) {
@@ -533,7 +622,7 @@ export default function Home() {
     }
 
     const newRecord: KhaataRecord = {
-      id: crypto.randomUUID ? crypto.randomUUID() : 'offline_k_' + Date.now(),
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'offline_k_' + Date.now(),
       person_name: khaataName.trim(),
       amount: parseFloat(khaataAmount),
       type: khaataType,
@@ -640,12 +729,12 @@ export default function Home() {
 
   const todayStr = useMemo(() => getDeviceDate(), []);
 
-  // 🟢 SMART PRIORITY SORTING: Incomplete at TOP, Completed at BOTTOM
+  // Smart Priority Sorting (Pending upar, Completed niche)
   const sortedTodayTasks = useMemo(() => {
     const list = tasks.filter(t => t.target_date === todayStr);
     return list.sort((a, b) => {
       if (a.is_completed !== b.is_completed) {
-        return a.is_completed ? 1 : -1; // Uncompleted stay up, completed sink down
+        return a.is_completed ? 1 : -1;
       }
       return 0;
     });
@@ -695,6 +784,20 @@ export default function Home() {
               <WifiOff className="w-3 h-3" /> Offline
             </div>
           )}
+
+          {/* Test & Trigger Notification Bell */}
+          <button 
+            onClick={handleNotificationClick}
+            className={`p-2 rounded-full border transition active:scale-95 ${
+              notificationsAllowed 
+                ? 'bg-neutral-900 border-white/10 text-emerald-400 hover:text-emerald-300' 
+                : 'bg-neutral-900 border-amber-500/30 text-amber-400 animate-pulse'
+            }`}
+            title="Click to Test / Enable Alerts"
+          >
+            <Bell className="w-4 h-4" />
+          </button>
+
           <div className="flex items-center gap-1.5 bg-neutral-900/80 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-full text-xs">
             <Flame className="w-4 h-4 text-orange-500 fill-orange-500" />
             <span className="font-semibold text-white">{sortedTodayTasks.filter(t => t.is_completed).length}</span>
@@ -857,7 +960,7 @@ export default function Home() {
                 </button>
               </form>
 
-              {/* Tasks List: Smart Priority Sorted */}
+              {/* Tasks List */}
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between px-1">
                   <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Today's Focus</h3>
