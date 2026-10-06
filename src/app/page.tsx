@@ -1314,81 +1314,76 @@ export default function Home() {
                 <p className="text-xs text-neutral-500">Khaata clear hai! Koi hisaab pending nahi.</p>
               </div>
             ) : (
-              khaataRecords.map(record => {
-                const isOverdue = record.due_date && record.due_date < todayStr && !record.is_settled;
+             khaataRecords.map(record => {
+  const isOverdue = record.due_date && record.due_date < todayStr && !record.is_settled;
 
-                return (
-                  <div
-                    key={record.id}
-                    className={`p-3.5 rounded-2xl border transition flex items-center justify-between ${
-                      record.is_settled
-                        ? 'bg-neutral-900/30 border-white/5 opacity-50'
-                        : isOverdue 
-                        ? 'bg-rose-950/20 border-rose-500/40' 
-                        : 'bg-neutral-900/80 border-white/10'
-                    }`}
-                  >
-                    <div 
-                      onClick={() => {
-                        setEditingKhaata(record);
-                        setPartialAmount('');
-                      }}
-                      className="cursor-pointer flex-1 mr-2"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-white flex items-center gap-1">
-                          {record.person_name}
-                          <Edit3 className="w-3 h-3 text-neutral-500 inline" />
-                        </span>
-                        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${
-                          record.type === 'lena' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
-                        }`}>
-                          {record.type === 'lena' ? 'Lena Hai' : 'Dena Hai'}
-                        </span>
-                        {isOverdue && (
-                          <span className="text-[9px] bg-rose-600 text-white px-1.5 py-0.5 rounded-md font-bold">
-                            OVERDUE!
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1 text-[10px] text-neutral-400 font-mono">
-                        <span className="text-white font-bold">₹{record.amount}</span>
-                        {record.due_date && <span>• Due: {record.due_date}</span>}
-                        {record.note && <span className="truncate max-w-[140px]">• "{record.note}"</span>}
-                      </div>
-                    </div>
+  return (
+    <div
+      key={record.id}
+      onClick={() => {
+        setEditingKhaata(record);
+        setPartialAmount('');
+      }}
+      className={`p-3.5 rounded-2xl border transition flex items-center justify-between cursor-pointer active:scale-[0.99] select-none ${
+        record.is_settled
+          ? 'bg-neutral-900/30 border-white/5 opacity-50'
+          : isOverdue 
+          ? 'bg-rose-950/20 border-rose-500/40 hover:border-rose-500/60' 
+          : 'bg-neutral-900/80 border-white/10 hover:border-white/20'
+      }`}
+    >
+      {/* Card Content Details */}
+      <div className="flex-1 mr-2 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-white truncate">
+            {record.person_name}
+          </span>
+          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 ${
+            record.type === 'lena' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+          }`}>
+            {record.type === 'lena' ? 'Lena Hai' : 'Dena Hai'}
+          </span>
+          {isOverdue && (
+            <span className="text-[9px] bg-rose-600 text-white px-1.5 py-0.5 rounded-md font-bold shrink-0">
+              OVERDUE!
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 mt-1 text-[10px] text-neutral-400 font-mono">
+          <span className="text-white font-bold">₹{record.amount}</span>
+          {record.due_date && <span>• Due: {record.due_date}</span>}
+          {record.note && <span className="truncate max-w-[150px]">• "{record.note}"</span>}
+        </div>
+      </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => {
-                          setEditingKhaata(record);
-                          setPartialAmount('');
-                        }}
-                        className="p-1.5 text-neutral-400 hover:text-amber-400 transition rounded-xl hover:bg-neutral-800"
-                        title="Edit / Adjust Amount"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => toggleKhaataSettled(record)}
-                        className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl transition active:scale-95 ${
-                          record.is_settled 
-                            ? 'bg-neutral-800 text-neutral-400' 
-                            : 'bg-white text-black hover:bg-neutral-200'
-                        }`}
-                      >
-                        {record.is_settled ? 'Settled ✓' : 'Nipta Diya'}
-                      </button>
-                      <button
-                        onClick={() => deleteKhaataRecord(record.id)}
-                        className="p-1.5 text-neutral-500 hover:text-rose-400 transition"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
+      {/* Actions: Nipta Diya & Delete */}
+      <div className="flex items-center gap-2 shrink-0">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleKhaataSettled(record);
+          }}
+          className={`text-[11px] font-bold px-3 py-1.5 rounded-xl transition active:scale-95 ${
+            record.is_settled 
+              ? 'bg-neutral-800 text-neutral-400' 
+              : 'bg-white text-black hover:bg-neutral-200'
+          }`}
+        >
+          {record.is_settled ? 'Settled ✓' : 'Nipta Diya'}
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            deleteKhaataRecord(record.id);
+          }}
+          className="p-1.5 text-neutral-500 hover:text-rose-400 transition rounded-xl"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+})
             )}
           </div>
         </section>
