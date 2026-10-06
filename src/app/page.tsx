@@ -6,6 +6,7 @@ import {
   Check, 
   Flame, 
   Plus, 
+  Minus,
   Heart, 
   Code2, 
   GitBranch, 
@@ -121,6 +122,10 @@ export default function Home() {
   const [khaataDueDate, setKhaataDueDate] = useState('');
   const [khaataNote, setKhaataNote] = useState('');
 
+  // State: Khaata Edit & Partial Adjustment Modal
+  const [editingKhaata, setEditingKhaata] = useState<KhaataRecord | null>(null);
+  const [partialAmount, setPartialAmount] = useState<string>('');
+
   // Widgets & Handles
   const [japCount, setJapCount] = useState(0);
   const [leetcodeUsername, setLeetcodeUsername] = useState('vedant-agale');
@@ -150,14 +155,11 @@ export default function Home() {
 
   const isProtectedTask = (task: Task) => DEFAULT_CATEGORIES.includes(task.category);
 
-  // ==========================================
-  // NOTIFICATION ENGINE (SERVICE WORKER + DESKTOP)
-  // ==========================================
+  // Service Worker & Notification Engine
   const sendNotification = async (title: string, body: string) => {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
     if (Notification.permission !== 'granted') return;
 
-    // Mobile / PWA standard
     if ('serviceWorker' in navigator) {
       try {
         const reg = await navigator.serviceWorker.ready;
@@ -172,7 +174,6 @@ export default function Home() {
       }
     }
 
-    // Desktop fallback
     try {
       new Notification(title, { body });
     } catch (e) {
@@ -182,7 +183,7 @@ export default function Home() {
 
   const handleNotificationClick = async () => {
     if (typeof window === 'undefined' || !('Notification' in window)) {
-      triggerBanner('Not Supported', 'Aapka browser notifications support nahi karta.', 'error');
+      triggerBanner('Not Supported', 'Browser notifications support nahi karta.', 'error');
       return;
     }
 
@@ -191,18 +192,16 @@ export default function Home() {
       if (permission === 'granted') {
         setNotificationsAllowed(true);
         triggerBanner('Active! 🔔', 'Notifications enable ho gayi hain.', 'success');
-        await sendNotification('SARTHI Alert System Active! 🔔', 'Badhiya! Ab tasks aur 7 PM ke alerts yahi aayenge.');
+        await sendNotification('SARTHI Alert System Active! 🔔', 'Badhiya! Tasks aur 7 PM ke alerts enable ho gaye.');
       } else {
-        triggerBanner('Permission Denied', 'Browser settings me jaakar notification allow karein.', 'error');
+        triggerBanner('Permission Denied', 'Browser settings me jaakar allow karein.', 'error');
       }
     } catch {
       triggerBanner('Permission Error', 'Notification settings check karein.', 'error');
     }
   };
 
-  // ==========================================
-  // OFFLINE QUEUE & SYNC ENGINE
-  // ==========================================
+  // Offline Queue & Sync Engine
   const enqueueOfflineAction = (action: OfflineAction) => {
     if (typeof window === 'undefined') return;
     const existing = JSON.parse(localStorage.getItem('sarthi_offline_queue') || '[]');
@@ -254,13 +253,13 @@ export default function Home() {
 
       const handleOnline = () => {
         setIsOnline(true);
-        triggerBanner('Online Reconnected', 'Data sync shuru ho gaya...', 'success');
+        triggerBanner('Online Reconnected', 'Data sync shuru...', 'success');
         syncOfflineQueue();
       };
 
       const handleOffline = () => {
         setIsOnline(false);
-        triggerBanner('Offline Mode Active', 'Aap offline hain. Data phone me save hoga!', 'info');
+        triggerBanner('Offline Mode Active', 'Aap offline hain. Local storage active.', 'info');
       };
 
       window.addEventListener('online', handleOnline);
@@ -331,7 +330,6 @@ export default function Home() {
     }
   };
 
-  // Realtime Listeners & Scheduled Alerts Watcher
   useEffect(() => {
     fetchAllData();
 
@@ -362,7 +360,6 @@ export default function Home() {
       const timeString = `${String(currentHours).padStart(2, '0')}:${String(currentMins).padStart(2, '0')}`;
       const today = now.toISOString().split('T')[0];
 
-      // 7 PM Routine Check
       if (currentHours === 19 && currentMins === 0 && !alertedAt7PM) {
         const pendingCount = tasks.filter(t => t.target_date === today && !t.is_completed).length;
         if (pendingCount > 0) {
@@ -376,7 +373,6 @@ export default function Home() {
       }
       if (currentHours !== 19) alertedAt7PM = false;
 
-      // Due time alert
       tasks.forEach(task => {
         if (!task.is_completed && task.target_date === today && task.due_time === timeString) {
           sendNotification('SARTHI Alert! ⏰', `Time ho gaya: "${task.title}" execute karo!`);
@@ -391,7 +387,7 @@ export default function Home() {
     };
   }, []);
 
-  // 1. Task Operations
+  // Task Operations
   const addTask = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalTitle = newTaskTitle.trim() ? newTaskTitle.trim() : category;
@@ -476,7 +472,6 @@ export default function Home() {
     }
   };
 
-  // LeetCode Verify
   const verifyLeetCode = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!navigator.onLine) {
@@ -506,7 +501,6 @@ export default function Home() {
     }
   };
 
-  // GitHub Verify
   const verifyGitHub = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!navigator.onLine) {
@@ -540,7 +534,6 @@ export default function Home() {
     }
   };
 
-  // Jap Counter
   const handleJapIncrement = async () => {
     const nextCount = japCount + 1;
     setJapCount(nextCount);
@@ -568,7 +561,7 @@ export default function Home() {
     }
   };
 
-  // 2. Shopping Operations
+  // Shopping Operations
   const addShoppingItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newShoppingItem.trim()) return;
@@ -613,7 +606,7 @@ export default function Home() {
     }
   };
 
-  // 3. Khaata Operations
+  // Khaata Operations
   const addKhaataEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!khaataName.trim() || !khaataAmount.trim()) {
@@ -660,6 +653,7 @@ export default function Home() {
 
   const deleteKhaataRecord = async (id: string) => {
     setKhaataRecords(khaataRecords.filter(r => r.id !== id));
+    setEditingKhaata(null);
     triggerBanner('Removed', 'Record remove kar diya gaya.', 'info');
 
     if (navigator.onLine) {
@@ -667,6 +661,71 @@ export default function Home() {
     } else {
       enqueueOfflineAction({ id, type: 'delete', table: 'khaata_records', matchId: id });
     }
+  };
+
+  // 🟢 Khaata Amount & Details Update Logic
+  const saveKhaataChanges = async (updatedRecord: KhaataRecord) => {
+    const updated = khaataRecords.map(r => r.id === updatedRecord.id ? updatedRecord : r);
+    setKhaataRecords(updated);
+    setEditingKhaata(null);
+    setPartialAmount('');
+    triggerBanner('Updated!', 'Hisaab update ho gaya.', 'success');
+
+    const payload = {
+      person_name: updatedRecord.person_name,
+      amount: updatedRecord.amount,
+      type: updatedRecord.type,
+      due_date: updatedRecord.due_date,
+      note: updatedRecord.note,
+      is_settled: updatedRecord.is_settled
+    };
+
+    if (navigator.onLine) {
+      await supabase.from('khaata_records').update(payload).eq('id', updatedRecord.id);
+    } else {
+      enqueueOfflineAction({
+        id: updatedRecord.id,
+        type: 'update',
+        table: 'khaata_records',
+        payload,
+        matchId: updatedRecord.id
+      });
+    }
+  };
+
+  // 🟢 Partial Adjustment (+ / -) Handler
+  const handlePartialAdjust = (mode: 'minus' | 'plus') => {
+    if (!editingKhaata) return;
+    const adjustVal = parseFloat(partialAmount);
+    if (isNaN(adjustVal) || adjustVal <= 0) {
+      triggerBanner('Invalid Amount', 'Sahi amount daalein!', 'error');
+      return;
+    }
+
+    let currentAmt = Number(editingKhaata.amount) || 0;
+    let newAmt = mode === 'minus' ? currentAmt - adjustVal : currentAmt + adjustVal;
+    let isSettled = editingKhaata.is_settled;
+
+    if (newAmt <= 0) {
+      newAmt = 0;
+      isSettled = true;
+    }
+
+    const noteAdd = mode === 'minus' ? `[Paid ₹${adjustVal}]` : `[Added ₹${adjustVal}]`;
+    const updatedNote = editingKhaata.note 
+      ? `${editingKhaata.note} ${noteAdd}`
+      : noteAdd;
+
+    const modified: KhaataRecord = {
+      ...editingKhaata,
+      amount: newAmt,
+      is_settled: isSettled,
+      note: updatedNote
+    };
+
+    setEditingKhaata(modified);
+    setPartialAmount('');
+    triggerBanner('Adjusted', `Naya balance: ₹${newAmt}`, 'info');
   };
 
   // Gestures
@@ -729,7 +788,6 @@ export default function Home() {
 
   const todayStr = useMemo(() => getDeviceDate(), []);
 
-  // Smart Priority Sorting (Pending upar, Completed niche)
   const sortedTodayTasks = useMemo(() => {
     const list = tasks.filter(t => t.target_date === todayStr);
     return list.sort((a, b) => {
@@ -785,7 +843,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* Test & Trigger Notification Bell */}
           <button 
             onClick={handleNotificationClick}
             className={`p-2 rounded-full border transition active:scale-95 ${
@@ -1214,7 +1271,7 @@ export default function Home() {
               />
               <input
                 type="number"
-                placeholder="Rupaye ₹ (e.g. 500)"
+                placeholder="Rupaye ₹ (e.g. 1500)"
                 value={khaataAmount}
                 onChange={(e) => setKhaataAmount(e.target.value)}
                 className="bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none"
@@ -1248,8 +1305,9 @@ export default function Home() {
             </button>
           </form>
 
+          {/* Khaata Active Records */}
           <div className="space-y-2">
-            <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 px-1">Active Ledger</h3>
+            <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 px-1">Active Ledger (Tap to Edit / Adjust)</h3>
 
             {khaataRecords.length === 0 ? (
               <div className="text-center py-10 bg-neutral-900/30 border border-white/5 rounded-3xl">
@@ -1270,9 +1328,18 @@ export default function Home() {
                         : 'bg-neutral-900/80 border-white/10'
                     }`}
                   >
-                    <div>
+                    <div 
+                      onClick={() => {
+                        setEditingKhaata(record);
+                        setPartialAmount('');
+                      }}
+                      className="cursor-pointer flex-1 mr-2"
+                    >
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-white">{record.person_name}</span>
+                        <span className="text-xs font-bold text-white flex items-center gap-1">
+                          {record.person_name}
+                          <Edit3 className="w-3 h-3 text-neutral-500 inline" />
+                        </span>
                         <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${
                           record.type === 'lena' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
                         }`}>
@@ -1285,13 +1352,23 @@ export default function Home() {
                         )}
                       </div>
                       <div className="flex items-center gap-2 mt-1 text-[10px] text-neutral-400 font-mono">
-                        <span>₹{record.amount}</span>
+                        <span className="text-white font-bold">₹{record.amount}</span>
                         {record.due_date && <span>• Due: {record.due_date}</span>}
-                        {record.note && <span>• "{record.note}"</span>}
+                        {record.note && <span className="truncate max-w-[140px]">• "{record.note}"</span>}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => {
+                          setEditingKhaata(record);
+                          setPartialAmount('');
+                        }}
+                        className="p-1.5 text-neutral-400 hover:text-amber-400 transition rounded-xl hover:bg-neutral-800"
+                        title="Edit / Adjust Amount"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
                       <button
                         onClick={() => toggleKhaataSettled(record)}
                         className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl transition active:scale-95 ${
@@ -1317,7 +1394,134 @@ export default function Home() {
         </section>
       )}
 
-      {/* Edit Milestone Modal */}
+      {/*  Bottom Sheet: Edit & Partial Amount Adjust Modal for Khaata */}
+      {editingKhaata && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-neutral-900 border border-white/15 w-full max-w-sm rounded-3xl p-5 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-white/10 pb-3">
+              <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                <Wallet className="w-4 h-4 text-amber-500" /> Hisaab / Amount Edit
+              </h3>
+              <button onClick={() => setEditingKhaata(null)} className="text-neutral-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick Partial Payment / Increment Calculation Section */}
+            <div className="bg-neutral-950/80 border border-amber-500/20 p-3 rounded-2xl space-y-2">
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-neutral-400 font-semibold">Partial Payment / Hisaab Adjust</span>
+                <span className="text-amber-400 font-mono font-bold">Remaining: ₹{editingKhaata.amount}</span>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  placeholder="Kitne diye / jama kiye? (e.g. 500)"
+                  value={partialAmount}
+                  onChange={(e) => setPartialAmount(e.target.value)}
+                  className="flex-1 bg-black/60 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => handlePartialAdjust('minus')}
+                  className="bg-emerald-500 hover:bg-emerald-400 text-black px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-0.5 active:scale-95"
+                  title="Subtract received/paid amount"
+                >
+                  <Minus className="w-3.5 h-3.5" /> Minus
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePartialAdjust('plus')}
+                  className="bg-rose-500 hover:bg-rose-400 text-white px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-0.5 active:scale-95"
+                  title="Add more debt"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add
+                </button>
+              </div>
+              <p className="text-[9px] text-neutral-500">
+                Tip: 1500 me se 1000 diye toh "1000" likhkar <b>Minus</b> dabayein, balance ₹500 bachega.
+              </p>
+            </div>
+
+            {/* Full Record Field Inputs */}
+            <div className="space-y-2.5 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-neutral-400 block mb-1">Person Name</label>
+                  <input 
+                    type="text" 
+                    value={editingKhaata.person_name} 
+                    onChange={(e) => setEditingKhaata({ ...editingKhaata, person_name: e.target.value })}
+                    className="w-full bg-black/60 border border-white/10 rounded-xl px-2.5 py-2 text-white focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-neutral-400 block mb-1">Current Amount (₹)</label>
+                  <input 
+                    type="number" 
+                    value={editingKhaata.amount} 
+                    onChange={(e) => setEditingKhaata({ ...editingKhaata, amount: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-black/60 border border-white/10 rounded-xl px-2.5 py-2 text-white focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-neutral-400 block mb-1">Type</label>
+                  <select
+                    value={editingKhaata.type}
+                    onChange={(e) => setEditingKhaata({ ...editingKhaata, type: e.target.value as 'lena' | 'dena' })}
+                    className="w-full bg-black/60 border border-white/10 rounded-xl px-2 py-2 text-white focus:outline-none text-xs"
+                  >
+                    <option value="lena">Lena Hai (+)</option>
+                    <option value="dena">Dena Hai (-)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-neutral-400 block mb-1">Due Date</label>
+                  <input 
+                    type="date" 
+                    value={editingKhaata.due_date || ''} 
+                    onChange={(e) => setEditingKhaata({ ...editingKhaata, due_date: e.target.value || null })}
+                    className="w-full bg-black/60 border border-white/10 rounded-xl px-2 py-2 text-white text-xs focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-neutral-400 block mb-1">Hisaab Note</label>
+                <input 
+                  type="text" 
+                  value={editingKhaata.note || ''} 
+                  onChange={(e) => setEditingKhaata({ ...editingKhaata, note: e.target.value })}
+                  placeholder="Payment logs ya note..."
+                  className="w-full bg-black/60 border border-white/10 rounded-xl px-2.5 py-2 text-white focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button 
+                type="button"
+                onClick={() => deleteKhaataRecord(editingKhaata.id)}
+                className="flex-1 bg-rose-500/15 border border-rose-500/30 text-rose-400 font-bold py-2.5 rounded-xl transition text-xs flex items-center justify-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete
+              </button>
+              <button 
+                type="button"
+                onClick={() => saveKhaataChanges(editingKhaata)}
+                className="flex-1 bg-amber-500 hover:bg-amber-400 text-black font-bold py-2.5 rounded-xl transition text-xs"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Milestone Modal for Tasks */}
       {editingTask && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
           <div className="bg-neutral-900 border border-white/15 w-full max-w-sm rounded-3xl p-5 space-y-4 shadow-2xl">
