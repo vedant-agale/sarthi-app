@@ -1,5 +1,7 @@
 'use client';
 
+import { DailyIntelCard } from '@/components/DailyIntelCard';
+import { UniversalInput } from '@/components/UniversalInput';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -663,7 +665,7 @@ export default function Home() {
     }
   };
 
-  // 🟢 Khaata Amount & Details Update Logic
+  // Khaata Amount & Details Update Logic
   const saveKhaataChanges = async (updatedRecord: KhaataRecord) => {
     const updated = khaataRecords.map(r => r.id === updatedRecord.id ? updatedRecord : r);
     setKhaataRecords(updated);
@@ -693,7 +695,7 @@ export default function Home() {
     }
   };
 
-  // 🟢 Partial Adjustment (+ / -) Handler
+  // Partial Adjustment (+ / -) Handler
   const handlePartialAdjust = (mode: 'minus' | 'plus') => {
     if (!editingKhaata) return;
     const adjustVal = parseFloat(partialAmount);
@@ -862,6 +864,62 @@ export default function Home() {
           </div>
         </div>
       </header>
+
+      {/* 🧠 Autonomous Daily Intel Card */}
+      <div className="mb-4">
+        <DailyIntelCard
+          tasks={tasks}
+          khaataRecords={khaataRecords}
+          todayStr={todayStr}
+          naamJapCount={japCount}
+        />
+      </div>
+
+      {/* ⚡ Smart Universal Input Bar */}
+      <div className="mb-5">
+        <UniversalInput
+          todayStr={todayStr}
+          onAddTask={async (tData) => {
+            const newTask: Task = {
+              id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'offline_' + Date.now(),
+              title: tData.title,
+              category: tData.category.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+              target_date: tData.target_date,
+              due_time: tData.target_time || null,
+              is_completed: false,
+              carry_forward_count: 0
+            };
+            saveTasksState([newTask, ...tasks]);
+            triggerBanner('Task Added', `"${tData.title}" routine me shamil ho gaya.`, 'success');
+
+            if (navigator.onLine) {
+              await supabase.from('tasks').insert([newTask]);
+            } else {
+              enqueueOfflineAction({ id: newTask.id, type: 'insert', table: 'tasks', payload: newTask });
+            }
+          }}
+          onAddKhaata={async (kData) => {
+            const newKhaata: KhaataRecord = {
+              id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'offline_k_' + Date.now(),
+              person_name: kData.person_name,
+              amount: kData.amount,
+              type: kData.type,
+              note: kData.note || null,
+              due_date: kData.due_date || null,
+              is_settled: false
+            };
+            setKhaataRecords([newKhaata, ...khaataRecords]);
+            triggerBanner('Khaata Added', `₹${kData.amount} (${kData.person_name}) save ho gaya.`, 'success');
+
+            if (navigator.onLine) {
+              await supabase.from('khaata_records').insert([newKhaata]);
+            } else {
+              enqueueOfflineAction({ id: newKhaata.id, type: 'insert', table: 'khaata_records', payload: newKhaata });
+            }
+          }}
+          onSuccess={(msg) => triggerBanner('Quick Saved', msg, 'success')}
+        />
+      </div>
 
       {/*  Module Switcher */}
       <div className="grid grid-cols-3 bg-neutral-900/90 p-1 rounded-2xl border border-white/10 text-xs font-semibold mb-5">
@@ -1314,76 +1372,76 @@ export default function Home() {
                 <p className="text-xs text-neutral-500">Khaata clear hai! Koi hisaab pending nahi.</p>
               </div>
             ) : (
-             khaataRecords.map(record => {
-  const isOverdue = record.due_date && record.due_date < todayStr && !record.is_settled;
+              khaataRecords.map(record => {
+                const isOverdue = record.due_date && record.due_date < todayStr && !record.is_settled;
 
-  return (
-    <div
-      key={record.id}
-      onClick={() => {
-        setEditingKhaata(record);
-        setPartialAmount('');
-      }}
-      className={`p-3.5 rounded-2xl border transition flex items-center justify-between cursor-pointer active:scale-[0.99] select-none ${
-        record.is_settled
-          ? 'bg-neutral-900/30 border-white/5 opacity-50'
-          : isOverdue 
-          ? 'bg-rose-950/20 border-rose-500/40 hover:border-rose-500/60' 
-          : 'bg-neutral-900/80 border-white/10 hover:border-white/20'
-      }`}
-    >
-      {/* Card Content Details */}
-      <div className="flex-1 mr-2 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-white truncate">
-            {record.person_name}
-          </span>
-          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 ${
-            record.type === 'lena' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
-          }`}>
-            {record.type === 'lena' ? 'Lena Hai' : 'Dena Hai'}
-          </span>
-          {isOverdue && (
-            <span className="text-[9px] bg-rose-600 text-white px-1.5 py-0.5 rounded-md font-bold shrink-0">
-              OVERDUE!
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 mt-1 text-[10px] text-neutral-400 font-mono">
-          <span className="text-white font-bold">₹{record.amount}</span>
-          {record.due_date && <span>• Due: {record.due_date}</span>}
-          {record.note && <span className="truncate max-w-[150px]">• "{record.note}"</span>}
-        </div>
-      </div>
+                return (
+                  <div
+                    key={record.id}
+                    onClick={() => {
+                      setEditingKhaata(record);
+                      setPartialAmount('');
+                    }}
+                    className={`p-3.5 rounded-2xl border transition flex items-center justify-between cursor-pointer active:scale-[0.99] select-none ${
+                      record.is_settled
+                        ? 'bg-neutral-900/30 border-white/5 opacity-50'
+                        : isOverdue 
+                        ? 'bg-rose-950/20 border-rose-500/40 hover:border-rose-500/60' 
+                        : 'bg-neutral-900/80 border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    {/* Card Content Details */}
+                    <div className="flex-1 mr-2 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-white truncate">
+                          {record.person_name}
+                        </span>
+                        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 ${
+                          record.type === 'lena' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                        }`}>
+                          {record.type === 'lena' ? 'Lena Hai' : 'Dena Hai'}
+                        </span>
+                        {isOverdue && (
+                          <span className="text-[9px] bg-rose-600 text-white px-1.5 py-0.5 rounded-md font-bold shrink-0">
+                            OVERDUE!
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 text-[10px] text-neutral-400 font-mono">
+                        <span className="text-white font-bold">₹{record.amount}</span>
+                        {record.due_date && <span>• Due: {record.due_date}</span>}
+                        {record.note && <span className="truncate max-w-[150px]">• "{record.note}"</span>}
+                      </div>
+                    </div>
 
-      {/* Actions: Nipta Diya & Delete */}
-      <div className="flex items-center gap-2 shrink-0">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleKhaataSettled(record);
-          }}
-          className={`text-[11px] font-bold px-3 py-1.5 rounded-xl transition active:scale-95 ${
-            record.is_settled 
-              ? 'bg-neutral-800 text-neutral-400' 
-              : 'bg-white text-black hover:bg-neutral-200'
-          }`}
-        >
-          {record.is_settled ? 'Settled ✓' : 'Nipta Diya'}
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            deleteKhaataRecord(record.id);
-          }}
-          className="p-1.5 text-neutral-500 hover:text-rose-400 transition rounded-xl"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
-      </div>
-    </div>
-  );
-})
+                    {/* Actions: Nipta Diya & Delete */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleKhaataSettled(record);
+                        }}
+                        className={`text-[11px] font-bold px-3 py-1.5 rounded-xl transition active:scale-95 ${
+                          record.is_settled 
+                            ? 'bg-neutral-800 text-neutral-400' 
+                            : 'bg-white text-black hover:bg-neutral-200'
+                        }`}
+                      >
+                        {record.is_settled ? 'Settled ✓' : 'Nipta Diya'}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteKhaataRecord(record.id);
+                        }}
+                        className="p-1.5 text-neutral-500 hover:text-rose-400 transition rounded-xl"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         </section>
@@ -1606,7 +1664,6 @@ export default function Home() {
           </div>
         </div>
       )}
-
     </main>
   );
 }
