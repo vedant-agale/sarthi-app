@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { Zap, CornerDownLeft, ArrowRight } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { Zap, CornerDownLeft, ArrowRight, Mic, MicOff } from 'lucide-react';
 
 interface UniversalInputProps {
   todayStr: string;
   onAddTask: (task: { title: string; category: string; target_date: string; target_time: string }) => Promise<void>;
   onAddKhaata: (record: { person_name: string; amount: number; type: 'lena' | 'dena'; note: string; due_date: string }) => Promise<void>;
   onSuccess: (msg: string) => void;
+  inputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
 export const UniversalInput: React.FC<UniversalInputProps> = ({
@@ -15,9 +16,72 @@ export const UniversalInput: React.FC<UniversalInputProps> = ({
   onAddTask,
   onAddKhaata,
   onSuccess,
+  inputRef,
 }) => {
   const [text, setText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  // Native Speech Recognition Setup (Hands-Free Dictation)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'hi-IN'; // Hindi + English mixed dictation
+
+        recognition.onresult = (event: any) => {
+          const transcript = event.results[0][0].transcript;
+          setText(prev => (prev ? `${prev} ${transcript}` : transcript));
+          setIsListening(false);
+        };
+
+        recognition.onerror = () => {
+          setIsListening(false);
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognitionRef.current = recognition;
+      }
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, []);
+
+  const toggleVoiceDictation = () => {
+    if (!recognitionRef.current) {
+      alert('Voice dictation aapke browser me support nahi karta. Chrome/Edge/Safari use karein.');
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (err) {
+        console.warn('Voice recognition start error:', err);
+      }
+    }
+  };
 
   // Parsing Engine
   const parsedIntent = useMemo(() => {
@@ -72,7 +136,6 @@ export const UniversalInput: React.FC<UniversalInputProps> = ({
       category = 'Urgent';
     }
 
-    // Date parsing: "kal" -> tomorrow
     let target_date = todayStr;
     if (lower.includes('kal')) {
       const d = new Date();
@@ -84,7 +147,6 @@ export const UniversalInput: React.FC<UniversalInputProps> = ({
       target_date = d.toISOString().split('T')[0];
     }
 
-    // Time parsing: e.g. "8 baje", "8:30 baje", "8am", "8 pm"
     let target_time = '09:00 AM';
     const timeMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm|baje)?/);
     if (timeMatch && (lower.includes('baje') || lower.includes('am') || lower.includes('pm'))) {
@@ -95,7 +157,6 @@ export const UniversalInput: React.FC<UniversalInputProps> = ({
       target_time = `${h.toString().padStart(2, '0')}:${m}`;
     }
 
-    // Clean title
     let title = raw
       .replace(/(kal|parso|aaj|\d{1,2}(?::\d{2})?\s*(?:am|pm|baje))/gi, '')
       .trim();
@@ -139,24 +200,42 @@ export const UniversalInput: React.FC<UniversalInputProps> = ({
         </div>
 
         <input
+          ref={inputRef as any}
           type="text"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder='Smart Bar: "Kal 8 baje gym" ya "Satya ko 500 diye dinner"...'
+          placeholder='Smart Bar: "Kal 8 baje gym" ya "Satya ko 500 diye"...'
           disabled={isSubmitting}
-          className="w-full bg-neutral-900/90 border border-white/10 hover:border-white/20 focus:border-amber-500/50 rounded-2xl pl-10 pr-12 py-3 text-xs text-white placeholder-neutral-500 outline-none transition shadow-inner font-medium"
+          className="w-full bg-neutral-900/90 border border-white/10 hover:border-white/20 focus:border-amber-500/50 rounded-2xl pl-10 pr-20 py-3 text-xs text-white placeholder-neutral-500 outline-none transition shadow-inner font-medium"
         />
 
-        <button
-          type="submit"
-          disabled={!text.trim() || isSubmitting}
-          className="absolute right-2 px-2.5 py-1.5 rounded-xl bg-white text-black text-[11px] font-bold disabled:opacity-20 transition active:scale-95 flex items-center gap-1"
-        >
-          <CornerDownLeft className="w-3.5 h-3.5" />
-        </button>
+        <div className="absolute right-2 flex items-center gap-1">
+          {/* 🎙️ Voice Dictation Button */}
+          <button
+            type="button"
+            onClick={toggleVoiceDictation}
+            title={isListening ? 'Listening...' : 'Voice Dictation'}
+            className={`p-1.5 rounded-xl transition active:scale-95 ${
+              isListening
+                ? 'bg-rose-500 text-white animate-pulse'
+                : 'text-neutral-400 hover:text-white bg-neutral-800'
+            }`}
+          >
+            {isListening ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
+          </button>
+
+          {/* Submit Action */}
+          <button
+            type="submit"
+            disabled={!text.trim() || isSubmitting}
+            className="px-2.5 py-1.5 rounded-xl bg-white text-black text-[11px] font-bold disabled:opacity-20 transition active:scale-95 flex items-center gap-1"
+          >
+            <CornerDownLeft className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </form>
 
-      {/* Live Parser Preview */}
+      {/* Live Parser Tag */}
       {parsedIntent && (
         <div className="flex items-center gap-2 px-2 py-1 text-[11px] font-mono text-neutral-400 animate-in fade-in duration-150">
           <ArrowRight className="w-3 h-3 text-amber-400 shrink-0" />

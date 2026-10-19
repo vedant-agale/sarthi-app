@@ -18,6 +18,16 @@ Designed with an **Apple iOS Glassmorphic Aesthetic**, SARTHI runs seamlessly on
 
 ---
 
+## ⚡ Autonomous Intelligence & Power Upgrades
+- **Daily Intel Briefing:** Real-time context engine jo dynamic phases (Morning Intel, Mid-day Sync, Night Push) ke mutabiq pending routines, streak security alerts, aur Khaata overdues brief karta hai.
+- **Smart Universal Input & Voice Dictation:** Natural language text aur native speech dictation (`mic`) jo normal baatcheet se automatic categories, dates, routine tasks, aur Khaata debts ko parse karke log karta hai.
+- **Raycast Command Palette (`Ctrl + K` / `⌘K`):** Fast keyboard-first navigation aur quick action triggers personal laptop workflow ke liye.
+- **Deep Work Focus Sprint:** Minimalist Zen Pomodoro timer HUD deep work execution aur assignment focus sessions ke liye.
+- **14-Day Grind Matrix:** GitHub-style streak consistency heatmap jo LeetCode, GitHub pushes, Naam Jap, aur daily completion velocity track karta hai.
+- **Offline Sync & Service Worker:** Local-first IndexedDB/localStorage queue engine jo network cut hone par safe execution aur auto-reconnect sync ensure karta hai.
+
+---
+
 ## 🛠 Tech Stack
 
 - **Frontend Framework:** [Next.js (App Router)](https://nextjs.org/)

@@ -1,5 +1,8 @@
 'use client';
 
+import { CommandPalette } from '@/components/CommandPalette';
+import { FocusSprintModal } from '@/components/FocusSprintModal';
+import { GrindMatrix } from '@/components/GrindMatrix';
 import { DailyIntelCard } from '@/components/DailyIntelCard';
 import { UniversalInput } from '@/components/UniversalInput';
 import { useState, useEffect, useMemo, useRef } from 'react';
@@ -31,7 +34,9 @@ import {
   ArrowUpRight, 
   ArrowDownLeft,
   WifiOff,
-  Bell
+  Bell,
+  Command,
+  Play
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -96,6 +101,23 @@ const MANUAL_CATEGORIES = [
 ];
 
 export default function Home() {
+  // Command Palette & Focus Sprint States
+  const [isCommandOpen, setIsCommandOpen] = useState(false);
+  const [focusTask, setFocusTask] = useState<Task | null>(null);
+  const universalInputRef = useRef<HTMLInputElement>(null);
+
+  // Global Ctrl + K / Cmd + K listener for Laptop
+  useEffect(() => {
+    const handleGlobalShortcuts = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalShortcuts);
+    return () => window.removeEventListener('keydown', handleGlobalShortcuts);
+  }, []);
+
   const [currentModule, setCurrentModule] = useState<'routine' | 'bazaar' | 'khaata'>('routine');
   const [activeTab, setActiveTab] = useState<'today' | 'upcoming' | 'history'>('today');
   const [isOnline, setIsOnline] = useState(true);
@@ -845,6 +867,15 @@ export default function Home() {
             </div>
           )}
 
+          {/* Quick Command Trigger (Mobile + Laptop) */}
+          <button 
+            onClick={() => setIsCommandOpen(true)}
+            className="p-2 rounded-full bg-neutral-900 border border-white/10 text-neutral-400 hover:text-white active:scale-95 transition"
+            title="Ctrl + K Command Palette"
+          >
+            <Command className="w-4 h-4 text-amber-400" />
+          </button>
+
           <button 
             onClick={handleNotificationClick}
             className={`p-2 rounded-full border transition active:scale-95 ${
@@ -878,6 +909,7 @@ export default function Home() {
       {/* ⚡ Smart Universal Input Bar */}
       <div className="mb-5">
         <UniversalInput
+          inputRef={universalInputRef}
           todayStr={todayStr}
           onAddTask={async (tData) => {
             const newTask: Task = {
@@ -1147,27 +1179,43 @@ export default function Home() {
                           </div>
                         </div>
 
-                        {task.category === 'leetcode' && !task.is_completed && (
-                          <button
-                            onClick={(e) => verifyLeetCode(task.id, e)}
-                            disabled={verifyingId === task.id}
-                            className="bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-semibold px-2 py-1 rounded-xl flex items-center gap-1 active:scale-95"
-                          >
-                            <RefreshCw className={`w-3 h-3 ${verifyingId === task.id ? 'animate-spin' : ''}`} />
-                            Verify AC
-                          </button>
-                        )}
+                        {/* Focus Sprint & Verifications */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {!task.is_completed && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFocusTask(task);
+                              }}
+                              className="p-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 active:scale-95 transition"
+                              title="Focus Sprint (Timer)"
+                            >
+                              <Play className="w-3.5 h-3.5 fill-amber-400" />
+                            </button>
+                          )}
 
-                        {task.category === 'github' && !task.is_completed && (
-                          <button
-                            onClick={(e) => verifyGitHub(task.id, e)}
-                            disabled={verifyingGithubId === task.id}
-                            className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-semibold px-2 py-1 rounded-xl flex items-center gap-1 active:scale-95"
-                          >
-                            <RefreshCw className={`w-3 h-3 ${verifyingGithubId === task.id ? 'animate-spin' : ''}`} />
-                            Verify Push
-                          </button>
-                        )}
+                          {task.category === 'leetcode' && !task.is_completed && (
+                            <button
+                              onClick={(e) => verifyLeetCode(task.id, e)}
+                              disabled={verifyingId === task.id}
+                              className="bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-semibold px-2 py-1 rounded-xl flex items-center gap-1 active:scale-95"
+                            >
+                              <RefreshCw className={`w-3 h-3 ${verifyingId === task.id ? 'animate-spin' : ''}`} />
+                              Verify AC
+                            </button>
+                          )}
+
+                          {task.category === 'github' && !task.is_completed && (
+                            <button
+                              onClick={(e) => verifyGitHub(task.id, e)}
+                              disabled={verifyingGithubId === task.id}
+                              className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-semibold px-2 py-1 rounded-xl flex items-center gap-1 active:scale-95"
+                            >
+                              <RefreshCw className={`w-3 h-3 ${verifyingGithubId === task.id ? 'animate-spin' : ''}`} />
+                              Verify Push
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -1198,14 +1246,23 @@ export default function Home() {
           )}
 
           {activeTab === 'history' && (
-            <section className="space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 px-1">Completed History</h3>
-              {historyTasks.map(task => (
-                <div key={task.id} className="p-3 bg-neutral-900/40 border border-white/5 rounded-2xl flex items-center justify-between">
-                  <h4 className="text-xs text-neutral-300 line-through truncate">{task.title}</h4>
-                  <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-mono">{task.category}</span>
+            <section className="space-y-3">
+              {/* 14-Day Grind Matrix */}
+              <GrindMatrix tasks={tasks} todayStr={todayStr} currentStreak={9} />
+
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 px-1 pt-1">Completed History</h3>
+              {historyTasks.length === 0 ? (
+                <div className="text-center py-8 bg-neutral-900/30 border border-white/5 rounded-2xl">
+                  <p className="text-xs text-neutral-500">Abhi tak koi task complete nahi hua.</p>
                 </div>
-              ))}
+              ) : (
+                historyTasks.map(task => (
+                  <div key={task.id} className="p-3 bg-neutral-900/40 border border-white/5 rounded-2xl flex items-center justify-between">
+                    <h4 className="text-xs text-neutral-300 line-through truncate">{task.title}</h4>
+                    <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-mono">{task.category}</span>
+                  </div>
+                ))
+              )}
             </section>
           )}
         </>
@@ -1664,6 +1721,27 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* ⌘ Command Palette (Laptop Ctrl+K & Mobile Trigger Button) */}
+      <CommandPalette
+        isOpen={isCommandOpen}
+        onClose={() => setIsCommandOpen(false)}
+        onSwitchModule={setCurrentModule}
+        onFocusInput={() => universalInputRef.current?.focus()}
+        onTriggerJap={handleJapIncrement}
+        onOpenFocusSprint={() => setFocusTask(sortedTodayTasks.find(t => !t.is_completed) || sortedTodayTasks[0] || null)}
+      />
+
+      {/* ⏱️ Deep Work Zen Focus Sprint Modal */}
+      <FocusSprintModal
+        isOpen={!!focusTask}
+        taskTitle={focusTask?.title}
+        onClose={() => setFocusTask(null)}
+        onCompleteTask={() => {
+          if (focusTask) toggleGeneralTask(focusTask);
+        }}
+      />
+
     </main>
   );
 }
