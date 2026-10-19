@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { Play, Pause, RotateCcw, X, CheckCircle2, Flame } from 'lucide-react';
 
@@ -20,25 +20,43 @@ export const FocusSprintModal: React.FC<FocusSprintProps> = ({
   const [durationMinutes, setDurationMinutes] = useState(25);
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [isActive, setIsActive] = useState(false);
+  const endTimeRef = useRef<number | null>(null);
 
+  // Preset duration switch hone par reset
   useEffect(() => {
     setTimeLeft(durationMinutes * 60);
     setIsActive(false);
+    endTimeRef.current = null;
   }, [durationMinutes]);
 
+  // Smooth Timestamp-Based Countdown Engine
   useEffect(() => {
-    let interval: any = null;
-    if (isActive && timeLeft > 0) {
-      interval = setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
-      }, 1000);
-    } else if (timeLeft === 0 && isActive) {
-      setIsActive(false);
-      confetti({ particleCount: 100, spread: 80, origin: { y: 0.6 } });
-      if (onCompleteTask) onCompleteTask();
+    if (!isActive) {
+      endTimeRef.current = null;
+      return;
     }
+
+    if (!endTimeRef.current) {
+      endTimeRef.current = Date.now() + timeLeft * 1000;
+    }
+
+    const interval = setInterval(() => {
+      if (!endTimeRef.current) return;
+      const remaining = Math.max(0, Math.round((endTimeRef.current - Date.now()) / 1000));
+
+      setTimeLeft(remaining);
+
+      if (remaining <= 0) {
+        clearInterval(interval);
+        setIsActive(false);
+        endTimeRef.current = null;
+        confetti({ particleCount: 100, spread: 80, origin: { y: 0.6 } });
+        if (onCompleteTask) onCompleteTask();
+      }
+    }, 250); // 250ms polling ensures exact zero-lag second transitions
+
     return () => clearInterval(interval);
-  }, [isActive, timeLeft, onCompleteTask]);
+  }, [isActive, onCompleteTask]);
 
   if (!isOpen) return null;
 
@@ -46,11 +64,27 @@ export const FocusSprintModal: React.FC<FocusSprintProps> = ({
   const seconds = timeLeft % 60;
   const progressPercent = ((durationMinutes * 60 - timeLeft) / (durationMinutes * 60)) * 100;
 
+  const handleTogglePlay = () => {
+    if (isActive) {
+      endTimeRef.current = null;
+      setIsActive(false);
+    } else {
+      endTimeRef.current = Date.now() + timeLeft * 1000;
+      setIsActive(true);
+    }
+  };
+
+  const handleReset = () => {
+    setIsActive(false);
+    endTimeRef.current = null;
+    setTimeLeft(durationMinutes * 60);
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-2xl flex flex-col items-center justify-center p-6 animate-in zoom-in-95 duration-200">
       <button
         onClick={onClose}
-        className="absolute top-6 right-6 p-2 rounded-full bg-neutral-900 border border-white/10 text-neutral-400 hover:text-white"
+        className="absolute top-6 right-6 p-2 rounded-full bg-neutral-900 border border-white/10 text-neutral-400 hover:text-white transition"
       >
         <X className="w-5 h-5" />
       </button>
@@ -65,7 +99,7 @@ export const FocusSprintModal: React.FC<FocusSprintProps> = ({
           {taskTitle}
         </h2>
 
-        {/* Circular Display */}
+        {/* Circular Countdown Ring */}
         <div className="relative w-56 h-56 mx-auto flex flex-col items-center justify-center">
           <svg className="w-full h-full -rotate-90 transform" viewBox="0 0 100 100">
             <circle
@@ -86,7 +120,7 @@ export const FocusSprintModal: React.FC<FocusSprintProps> = ({
               strokeDasharray={276.46}
               strokeDashoffset={276.46 - (276.46 * progressPercent) / 100}
               strokeLinecap="round"
-              className="transition-all duration-1000 ease-linear"
+              className="transition-[stroke-dashoffset] duration-300 ease-linear"
             />
           </svg>
           <div className="absolute flex flex-col items-center">
@@ -97,7 +131,7 @@ export const FocusSprintModal: React.FC<FocusSprintProps> = ({
           </div>
         </div>
 
-        {/* Preset Selector */}
+        {/* Sprint Presets */}
         {!isActive && (
           <div className="flex justify-center gap-2">
             {[15, 25, 45].map((m) => (
@@ -106,7 +140,7 @@ export const FocusSprintModal: React.FC<FocusSprintProps> = ({
                 onClick={() => setDurationMinutes(m)}
                 className={`px-3 py-1 rounded-xl text-xs font-bold font-mono transition ${
                   durationMinutes === m
-                    ? 'bg-amber-500 text-black'
+                    ? 'bg-amber-500 text-black shadow-md'
                     : 'bg-neutral-900 border border-white/10 text-neutral-400 hover:text-white'
                 }`}
               >
@@ -116,10 +150,10 @@ export const FocusSprintModal: React.FC<FocusSprintProps> = ({
           </div>
         )}
 
-        {/* Timer Controls */}
+        {/* Control Buttons */}
         <div className="flex items-center justify-center gap-3 pt-2">
           <button
-            onClick={() => setTimeLeft(durationMinutes * 60)}
+            onClick={handleReset}
             className="p-3 rounded-2xl bg-neutral-900 border border-white/10 text-neutral-400 hover:text-white active:scale-95 transition"
             title="Reset"
           >
@@ -127,7 +161,7 @@ export const FocusSprintModal: React.FC<FocusSprintProps> = ({
           </button>
 
           <button
-            onClick={() => setIsActive(!isActive)}
+            onClick={handleTogglePlay}
             className="px-6 py-3 rounded-2xl bg-white text-black font-black text-xs flex items-center gap-2 active:scale-95 transition shadow-lg"
           >
             {isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-black" />}
