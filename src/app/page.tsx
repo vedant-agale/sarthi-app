@@ -5,6 +5,7 @@ import { FocusSprintModal } from '@/components/FocusSprintModal';
 import { GrindMatrix } from '@/components/GrindMatrix';
 import { DailyIntelCard } from '@/components/DailyIntelCard';
 import { UniversalInput } from '@/components/UniversalInput';
+import { InstantDropModal, ClipItem } from '@/components/InstantDropModal';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -23,10 +24,7 @@ import {
   X, 
   Calendar, 
   Clock, 
-  History, 
   RotateCcw, 
-  Hourglass, 
-  Edit3, 
   SlidersHorizontal, 
   Lock, 
   ShoppingBag, 
@@ -36,7 +34,9 @@ import {
   WifiOff,
   Bell,
   Command,
-  Play
+  Play,
+  Clipboard,
+  Receipt
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -81,6 +81,9 @@ interface BannerNotification {
   type: 'success' | 'error' | 'info';
 }
 
+const CLIP_PREFIX = '__CLIP__:';
+const KHARCHA_TAG = '[KHARCHA]';
+
 const DEFAULT_ROUTINES = [
   { title: 'Naam Jap (108 Jap)', category: 'naam_jap' },
   { title: 'LeetCode Daily Challenge', category: 'leetcode' },
@@ -101,8 +104,9 @@ const MANUAL_CATEGORIES = [
 ];
 
 export default function Home() {
-  // Command Palette & Focus Sprint States
+  // Command Palette, Focus Sprint & Instant Drop States
   const [isCommandOpen, setIsCommandOpen] = useState(false);
+  const [isClipOpen, setIsClipOpen] = useState(false);
   const [focusTask, setFocusTask] = useState<Task | null>(null);
   const universalInputRef = useRef<HTMLInputElement>(null);
 
@@ -142,7 +146,7 @@ export default function Home() {
   const [khaataRecords, setKhaataRecords] = useState<KhaataRecord[]>([]);
   const [khaataName, setKhaataName] = useState('');
   const [khaataAmount, setKhaataAmount] = useState('');
-  const [khaataType, setKhaataType] = useState<'lena' | 'dena'>('lena');
+  const [khaataType, setKhaataType] = useState<'lena' | 'dena' | 'kharcha'>('lena');
   const [khaataDueDate, setKhaataDueDate] = useState('');
   const [khaataNote, setKhaataNote] = useState('');
 
@@ -510,7 +514,7 @@ export default function Home() {
 
       if (data.verified) {
         confetti({ particleCount: 90, spread: 70, origin: { y: 0.7 } });
-        triggerBanner('Verified! 🔥', data.message, 'success');
+        triggerBanner('Verified! (+50 XP) 🔥', data.message, 'success');
         
         const updated = tasks.map(t => t.id === taskId ? { ...t, is_completed: true, completed_at: new Date().toISOString() } : t);
         saveTasksState(updated);
@@ -543,7 +547,7 @@ export default function Home() {
 
       if (data.verified) {
         confetti({ particleCount: 90, spread: 70, origin: { y: 0.7 } });
-        triggerBanner('Verified! 🚀', data.message, 'success');
+        triggerBanner('Verified! (+50 XP) 🚀', data.message, 'success');
         
         const updated = tasks.map(t => t.id === taskId ? { ...t, is_completed: true, completed_at: new Date().toISOString() } : t);
         saveTasksState(updated);
@@ -564,7 +568,7 @@ export default function Home() {
 
     if (nextCount === 108) {
       confetti({ particleCount: 120, spread: 90, origin: { y: 0.6 } });
-      triggerBanner('Har Har Mahadev! 🙏', '108 Naam Jap pure hue!', 'success');
+      triggerBanner('Har Har Mahadev! (+100 XP) 🙏', '108 Naam Jap pure hue!', 'success');
       const japTask = tasks.find(t => t.category === 'naam_jap' && !t.is_completed);
       if (japTask) {
         const updated = tasks.map(t => t.id === japTask.id ? { ...t, is_completed: true, completed_at: new Date().toISOString() } : t);
@@ -582,6 +586,45 @@ export default function Home() {
           });
         }
       }
+    }
+  };
+
+  // 📋 Cross-Device Instant Drop Clipboard Operations
+  const clipItems: ClipItem[] = useMemo(() => {
+    return shoppingItems
+      .filter(i => i.title.startsWith(CLIP_PREFIX))
+      .map(i => ({
+        id: i.id,
+        content: i.title.slice(CLIP_PREFIX.length),
+      }));
+  }, [shoppingItems]);
+
+  const bazaarOnlyItems = useMemo(() => {
+    return shoppingItems.filter(i => !i.title.startsWith(CLIP_PREFIX));
+  }, [shoppingItems]);
+
+  const handleAddClip = async (content: string) => {
+    const newItem: ShoppingItem = {
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'clip_' + Date.now(),
+      title: `${CLIP_PREFIX}${content}`,
+      is_bought: false,
+    };
+    setShoppingItems([newItem, ...shoppingItems]);
+    triggerBanner('Dropped to Cloud ⚡', 'Sabhi devices par instant sync ho gaya!', 'success');
+
+    if (navigator.onLine) {
+      await supabase.from('shopping_items').insert([newItem]);
+    } else {
+      enqueueOfflineAction({ id: newItem.id, type: 'insert', table: 'shopping_items', payload: newItem });
+    }
+  };
+
+  const handleDeleteClip = async (id: string) => {
+    setShoppingItems(shoppingItems.filter(i => i.id !== id));
+    if (navigator.onLine) {
+      await supabase.from('shopping_items').delete().eq('id', id);
+    } else {
+      enqueueOfflineAction({ id, type: 'delete', table: 'shopping_items', matchId: id });
     }
   };
 
@@ -621,7 +664,7 @@ export default function Home() {
   };
 
   const clearBoughtItems = async () => {
-    const remaining = shoppingItems.filter(i => !i.is_bought);
+    const remaining = shoppingItems.filter(i => !i.is_bought || i.title.startsWith(CLIP_PREFIX));
     setShoppingItems(remaining);
     triggerBanner('Cleared', 'Khareede hue items saaf kar diye.', 'info');
 
@@ -630,21 +673,26 @@ export default function Home() {
     }
   };
 
-  // Khaata Operations
+  // Khaata & Roz Ka Kharcha Operations
   const addKhaataEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!khaataName.trim() || !khaataAmount.trim()) {
-      triggerBanner('Missing Fields', 'Naam aur Amount daalna zaroori hai!', 'error');
+      triggerBanner('Missing Fields', 'Naam/Item aur Amount daalna zaroori hai!', 'error');
       return;
     }
+
+    const isKharcha = khaataType === 'kharcha';
+    const finalNote = isKharcha
+      ? `${KHARCHA_TAG} ${khaataNote.trim() || 'Daily Spend'}`.trim()
+      : khaataNote.trim() || null;
 
     const newRecord: KhaataRecord = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'offline_k_' + Date.now(),
       person_name: khaataName.trim(),
       amount: parseFloat(khaataAmount),
-      type: khaataType,
-      due_date: khaataDueDate || null,
-      note: khaataNote.trim() || null,
+      type: isKharcha ? 'dena' : khaataType,
+      due_date: isKharcha ? todayStr : (khaataDueDate || null),
+      note: finalNote,
       is_settled: false
     };
 
@@ -653,7 +701,11 @@ export default function Home() {
     setKhaataAmount('');
     setKhaataDueDate('');
     setKhaataNote('');
-    triggerBanner('Record Saved', 'Hisaab diary me save ho gaya.', 'success');
+    triggerBanner(
+      isKharcha ? 'Kharcha Logged 💸' : 'Record Saved',
+      isKharcha ? `₹${newRecord.amount} kharcha note ho gaya.` : 'Hisaab diary me save ho gaya.',
+      'success'
+    );
 
     if (navigator.onLine) {
       const { error } = await supabase.from('khaata_records').insert([newRecord]);
@@ -687,7 +739,6 @@ export default function Home() {
     }
   };
 
-  // Khaata Amount & Details Update Logic
   const saveKhaataChanges = async (updatedRecord: KhaataRecord) => {
     const updated = khaataRecords.map(r => r.id === updatedRecord.id ? updatedRecord : r);
     setKhaataRecords(updated);
@@ -717,7 +768,6 @@ export default function Home() {
     }
   };
 
-  // Partial Adjustment (+ / -) Handler
   const handlePartialAdjust = (mode: 'minus' | 'plus') => {
     if (!editingKhaata) return;
     const adjustVal = parseFloat(partialAmount);
@@ -798,19 +848,26 @@ export default function Home() {
     return `${hours}h left`;
   };
 
+  const todayStr = useMemo(() => getDeviceDate(), []);
+
+  // Khaata & Kharcha Totals
   const totalLenaHai = useMemo(() => {
     return khaataRecords
-      .filter(r => r.type === 'lena' && !r.is_settled)
+      .filter(r => r.type === 'lena' && !r.is_settled && !r.note?.startsWith(KHARCHA_TAG))
       .reduce((acc, cur) => acc + Number(cur.amount), 0);
   }, [khaataRecords]);
 
   const totalDenaHai = useMemo(() => {
     return khaataRecords
-      .filter(r => r.type === 'dena' && !r.is_settled)
+      .filter(r => r.type === 'dena' && !r.is_settled && !r.note?.startsWith(KHARCHA_TAG))
       .reduce((acc, cur) => acc + Number(cur.amount), 0);
   }, [khaataRecords]);
 
-  const todayStr = useMemo(() => getDeviceDate(), []);
+  const totalKharcha = useMemo(() => {
+    return khaataRecords
+      .filter(r => r.note?.startsWith(KHARCHA_TAG) && !r.is_settled)
+      .reduce((acc, cur) => acc + Number(cur.amount), 0);
+  }, [khaataRecords]);
 
   const sortedTodayTasks = useMemo(() => {
     const list = tasks.filter(t => t.target_date === todayStr);
@@ -860,14 +917,28 @@ export default function Home() {
           <span className="text-[10px] font-bold tracking-widest uppercase text-amber-500">Autonomous Assistant</span>
           <h1 className="text-2xl font-black tracking-tight text-white">SARTHI</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {!isOnline && (
             <div className="flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2.5 py-1 rounded-full text-[10px] font-bold">
               <WifiOff className="w-3 h-3" /> Offline
             </div>
           )}
 
-          {/* Quick Command Trigger (Mobile + Laptop) */}
+          {/* 📋 Cross-Device Instant Drop Clipboard Trigger */}
+          <button
+            onClick={() => setIsClipOpen(true)}
+            className="relative p-2 rounded-full bg-neutral-900 border border-white/10 text-neutral-300 hover:text-white active:scale-95 transition"
+            title="Instant Drop Clipboard (Phone ↔ Laptop)"
+          >
+            <Clipboard className="w-4 h-4 text-emerald-400" />
+            {clipItems.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 text-black text-[9px] font-black flex items-center justify-center">
+                {clipItems.length}
+              </span>
+            )}
+          </button>
+
+          {/* ⌘ Quick Command Trigger */}
           <button 
             onClick={() => setIsCommandOpen(true)}
             className="p-2 rounded-full bg-neutral-900 border border-white/10 text-neutral-400 hover:text-white active:scale-95 transition"
@@ -888,15 +959,15 @@ export default function Home() {
             <Bell className="w-4 h-4" />
           </button>
 
-          <div className="flex items-center gap-1.5 bg-neutral-900/80 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-full text-xs">
-            <Flame className="w-4 h-4 text-orange-500 fill-orange-500" />
+          <div className="flex items-center gap-1 bg-neutral-900/80 backdrop-blur-md border border-white/10 px-2.5 py-1.5 rounded-full text-xs">
+            <Flame className="w-3.5 h-3.5 text-orange-500 fill-orange-500" />
             <span className="font-semibold text-white">{sortedTodayTasks.filter(t => t.is_completed).length}</span>
             <span className="text-neutral-500">/{sortedTodayTasks.length}</span>
           </div>
         </div>
       </header>
 
-      {/* 🧠 Autonomous Daily Intel Card */}
+      {/* 🧠 Autonomous Daily Intel + RPG XP Card */}
       <div className="mb-4">
         <DailyIntelCard
           tasks={tasks}
@@ -922,7 +993,6 @@ export default function Home() {
               carry_forward_count: 0
             };
             saveTasksState([newTask, ...tasks]);
-            triggerBanner('Task Added', `"${tData.title}" routine me shamil ho gaya.`, 'success');
 
             if (navigator.onLine) {
               await supabase.from('tasks').insert([newTask]);
@@ -931,17 +1001,17 @@ export default function Home() {
             }
           }}
           onAddKhaata={async (kData) => {
+            const isKharcha = kData.type === 'kharcha';
             const newKhaata: KhaataRecord = {
               id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'offline_k_' + Date.now(),
               person_name: kData.person_name,
               amount: kData.amount,
-              type: kData.type,
-              note: kData.note || null,
+              type: isKharcha ? 'dena' : kData.type,
+              note: isKharcha ? `${KHARCHA_TAG} ${kData.note}` : (kData.note || null),
               due_date: kData.due_date || null,
               is_settled: false
             };
             setKhaataRecords([newKhaata, ...khaataRecords]);
-            triggerBanner('Khaata Added', `₹${kData.amount} (${kData.person_name}) save ho gaya.`, 'success');
 
             if (navigator.onLine) {
               await supabase.from('khaata_records').insert([newKhaata]);
@@ -1179,7 +1249,6 @@ export default function Home() {
                           </div>
                         </div>
 
-                        {/* Focus Sprint & Verifications */}
                         <div className="flex items-center gap-1.5 shrink-0">
                           {!task.is_completed && (
                             <button
@@ -1247,7 +1316,6 @@ export default function Home() {
 
           {activeTab === 'history' && (
             <section className="space-y-3">
-              {/* 14-Day Grind Matrix */}
               <GrindMatrix tasks={tasks} todayStr={todayStr} currentStreak={9} />
 
               <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 px-1 pt-1">Completed History</h3>
@@ -1278,7 +1346,7 @@ export default function Home() {
               </h2>
               <p className="text-[10px] text-neutral-400">Ghar se note karo, dukaan par tick karo</p>
             </div>
-            {shoppingItems.some(i => i.is_bought) && (
+            {bazaarOnlyItems.some(i => i.is_bought) && (
               <button
                 onClick={clearBoughtItems}
                 className="text-[11px] font-semibold text-rose-400 hover:text-rose-300 active:scale-95 transition"
@@ -1305,12 +1373,12 @@ export default function Home() {
           </form>
 
           <div className="space-y-2">
-            {shoppingItems.length === 0 ? (
+            {bazaarOnlyItems.length === 0 ? (
               <div className="text-center py-10 bg-neutral-900/30 border border-white/5 rounded-3xl">
                 <p className="text-xs text-neutral-500">Shopping list khali hai. Jo khareedna hai yaha add karo!</p>
               </div>
             ) : (
-              shoppingItems.map(item => (
+              bazaarOnlyItems.map(item => (
                 <div
                   key={item.id}
                   onClick={() => toggleShoppingItem(item)}
@@ -1335,31 +1403,39 @@ export default function Home() {
         </section>
       )}
 
-      {/* MODULE 3: KHAATA */}
+      {/* MODULE 3: KHAATA 2.0 (Udhaar + Roz Ka Kharcha) */}
       {currentModule === 'khaata' && (
         <section className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-neutral-900/80 border border-emerald-500/20 rounded-2xl p-3.5">
-              <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-semibold mb-1">
-                <ArrowDownLeft className="w-4 h-4" /> Lena Hai (Aana Hai)
+          {/* 3-Column Summary Deck */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-neutral-900/80 border border-emerald-500/20 rounded-2xl p-3">
+              <div className="flex items-center gap-1 text-emerald-400 text-[10px] font-bold mb-1">
+                <ArrowDownLeft className="w-3.5 h-3.5" /> Lena Hai
               </div>
-              <span className="text-lg font-mono font-bold text-white">₹{totalLenaHai}</span>
+              <span className="text-sm font-mono font-bold text-white">₹{totalLenaHai}</span>
             </div>
 
-            <div className="bg-neutral-900/80 border border-rose-500/20 rounded-2xl p-3.5">
-              <div className="flex items-center gap-1.5 text-rose-400 text-xs font-semibold mb-1">
-                <ArrowUpRight className="w-4 h-4" /> Dena Hai (Wapas Karna)
+            <div className="bg-neutral-900/80 border border-rose-500/20 rounded-2xl p-3">
+              <div className="flex items-center gap-1 text-rose-400 text-[10px] font-bold mb-1">
+                <ArrowUpRight className="w-3.5 h-3.5" /> Dena Hai
               </div>
-              <span className="text-lg font-mono font-bold text-white">₹{totalDenaHai}</span>
+              <span className="text-sm font-mono font-bold text-white">₹{totalDenaHai}</span>
+            </div>
+
+            <div className="bg-neutral-900/80 border border-amber-500/20 rounded-2xl p-3">
+              <div className="flex items-center gap-1 text-amber-400 text-[10px] font-bold mb-1">
+                <Receipt className="w-3.5 h-3.5" /> Kharcha
+              </div>
+              <span className="text-sm font-mono font-bold text-amber-400">₹{totalKharcha}</span>
             </div>
           </div>
 
           <form onSubmit={addKhaataEntry} className="space-y-2.5 bg-neutral-900/60 border border-white/10 p-3.5 rounded-3xl">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-1.5">
               <button
                 type="button"
                 onClick={() => setKhaataType('lena')}
-                className={`py-1.5 rounded-xl text-xs font-bold transition ${
+                className={`py-1.5 rounded-xl text-[11px] font-bold transition ${
                   khaataType === 'lena' ? 'bg-emerald-500 text-black' : 'bg-neutral-800 text-neutral-400'
                 }`}
               >
@@ -1368,25 +1444,34 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setKhaataType('dena')}
-                className={`py-1.5 rounded-xl text-xs font-bold transition ${
+                className={`py-1.5 rounded-xl text-[11px] font-bold transition ${
                   khaataType === 'dena' ? 'bg-rose-500 text-black' : 'bg-neutral-800 text-neutral-400'
                 }`}
               >
                 - Dena Hai
+              </button>
+              <button
+                type="button"
+                onClick={() => setKhaataType('kharcha')}
+                className={`py-1.5 rounded-xl text-[11px] font-bold transition ${
+                  khaataType === 'kharcha' ? 'bg-amber-500 text-black' : 'bg-neutral-800 text-neutral-400'
+                }`}
+              >
+                💸 Kharcha
               </button>
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-xs">
               <input
                 type="text"
-                placeholder="Kiska naam hai?..."
+                placeholder={khaataType === 'kharcha' ? 'Item (e.g. Petrol, Chai)...' : 'Kiska naam hai?...'}
                 value={khaataName}
                 onChange={(e) => setKhaataName(e.target.value)}
                 className="bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none"
               />
               <input
                 type="number"
-                placeholder="Rupaye ₹ (e.g. 1500)"
+                placeholder="Rupaye ₹ (e.g. 350)"
                 value={khaataAmount}
                 onChange={(e) => setKhaataAmount(e.target.value)}
                 className="bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none"
@@ -1405,7 +1490,7 @@ export default function Home() {
               </div>
               <input
                 type="text"
-                placeholder="Note / Kis cheez ke?"
+                placeholder="Note / Category..."
                 value={khaataNote}
                 onChange={(e) => setKhaataNote(e.target.value)}
                 className="bg-black/50 border border-white/10 rounded-xl px-3 py-1.5 text-white focus:outline-none"
@@ -1414,15 +1499,19 @@ export default function Home() {
 
             <button
               type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-2.5 rounded-xl transition active:scale-95"
+              className={`w-full font-bold text-xs py-2.5 rounded-xl transition active:scale-95 ${
+                khaataType === 'kharcha'
+                  ? 'bg-amber-500 hover:bg-amber-400 text-black'
+                  : 'bg-blue-600 hover:bg-blue-500 text-white'
+              }`}
             >
-              Hisaab Me Add Karo
+              {khaataType === 'kharcha' ? 'Kharcha Note Karo 💸' : 'Hisaab Me Add Karo'}
             </button>
           </form>
 
           {/* Khaata Active Records */}
           <div className="space-y-2">
-            <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 px-1">Active Ledger (Tap to Edit / Adjust)</h3>
+            <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 px-1">Active Ledger & Expenses (Tap to Edit)</h3>
 
             {khaataRecords.length === 0 ? (
               <div className="text-center py-10 bg-neutral-900/30 border border-white/5 rounded-3xl">
@@ -1430,7 +1519,9 @@ export default function Home() {
               </div>
             ) : (
               khaataRecords.map(record => {
-                const isOverdue = record.due_date && record.due_date < todayStr && !record.is_settled;
+                const isKharcha = record.note?.startsWith(KHARCHA_TAG);
+                const cleanNote = isKharcha ? record.note?.replace(KHARCHA_TAG, '').trim() : record.note;
+                const isOverdue = !isKharcha && record.due_date && record.due_date < todayStr && !record.is_settled;
 
                 return (
                   <div
@@ -1447,16 +1538,19 @@ export default function Home() {
                         : 'bg-neutral-900/80 border-white/10 hover:border-white/20'
                     }`}
                   >
-                    {/* Card Content Details */}
                     <div className="flex-1 mr-2 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-white truncate">
                           {record.person_name}
                         </span>
                         <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 ${
-                          record.type === 'lena' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                          isKharcha
+                            ? 'bg-amber-500/20 text-amber-400'
+                            : record.type === 'lena'
+                            ? 'bg-emerald-500/20 text-emerald-400'
+                            : 'bg-rose-500/20 text-rose-400'
                         }`}>
-                          {record.type === 'lena' ? 'Lena Hai' : 'Dena Hai'}
+                          {isKharcha ? '💸 Kharcha' : record.type === 'lena' ? 'Lena Hai' : 'Dena Hai'}
                         </span>
                         {isOverdue && (
                           <span className="text-[9px] bg-rose-600 text-white px-1.5 py-0.5 rounded-md font-bold shrink-0">
@@ -1466,12 +1560,11 @@ export default function Home() {
                       </div>
                       <div className="flex items-center gap-2 mt-1 text-[10px] text-neutral-400 font-mono">
                         <span className="text-white font-bold">₹{record.amount}</span>
-                        {record.due_date && <span>• Due: {record.due_date}</span>}
-                        {record.note && <span className="truncate max-w-[150px]">• "{record.note}"</span>}
+                        {record.due_date && <span>• {isKharcha ? 'Date:' : 'Due:'} {record.due_date}</span>}
+                        {cleanNote && <span className="truncate max-w-[140px]">• "{cleanNote}"</span>}
                       </div>
                     </div>
 
-                    {/* Actions: Nipta Diya & Delete */}
                     <div className="flex items-center gap-2 shrink-0">
                       <button
                         onClick={(e) => {
@@ -1484,7 +1577,7 @@ export default function Home() {
                             : 'bg-white text-black hover:bg-neutral-200'
                         }`}
                       >
-                        {record.is_settled ? 'Settled ✓' : 'Nipta Diya'}
+                        {record.is_settled ? 'Archived ✓' : isKharcha ? 'Done' : 'Nipta Diya'}
                       </button>
                       <button
                         onClick={(e) => {
@@ -1517,7 +1610,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Quick Partial Payment / Increment Calculation Section */}
             <div className="bg-neutral-950/80 border border-amber-500/20 p-3 rounded-2xl space-y-2">
               <div className="flex justify-between items-center text-[11px]">
                 <span className="text-neutral-400 font-semibold">Partial Payment / Hisaab Adjust</span>
@@ -1535,7 +1627,6 @@ export default function Home() {
                   type="button"
                   onClick={() => handlePartialAdjust('minus')}
                   className="bg-emerald-500 hover:bg-emerald-400 text-black px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-0.5 active:scale-95"
-                  title="Subtract received/paid amount"
                 >
                   <Minus className="w-3.5 h-3.5" /> Minus
                 </button>
@@ -1543,21 +1634,16 @@ export default function Home() {
                   type="button"
                   onClick={() => handlePartialAdjust('plus')}
                   className="bg-rose-500 hover:bg-rose-400 text-white px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-0.5 active:scale-95"
-                  title="Add more debt"
                 >
                   <Plus className="w-3.5 h-3.5" /> Add
                 </button>
               </div>
-              <p className="text-[9px] text-neutral-500">
-                Tip: 1500 me se 1000 diye toh "1000" likhkar <b>Minus</b> dabayein, balance ₹500 bachega.
-              </p>
             </div>
 
-            {/* Full Record Field Inputs */}
             <div className="space-y-2.5 text-xs">
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-neutral-400 block mb-1">Person Name</label>
+                  <label className="text-neutral-400 block mb-1">Name / Item</label>
                   <input 
                     type="text" 
                     value={editingKhaata.person_name} 
@@ -1589,7 +1675,7 @@ export default function Home() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-neutral-400 block mb-1">Due Date</label>
+                  <label className="text-neutral-400 block mb-1">Date</label>
                   <input 
                     type="date" 
                     value={editingKhaata.due_date || ''} 
@@ -1605,7 +1691,6 @@ export default function Home() {
                   type="text" 
                   value={editingKhaata.note || ''} 
                   onChange={(e) => setEditingKhaata({ ...editingKhaata, note: e.target.value })}
-                  placeholder="Payment logs ya note..."
                   className="w-full bg-black/60 border border-white/10 rounded-xl px-2.5 py-2 text-white focus:outline-none"
                 />
               </div>
@@ -1722,7 +1807,16 @@ export default function Home() {
         </div>
       )}
 
-      {/* ⌘ Command Palette (Laptop Ctrl+K & Mobile Trigger Button) */}
+      {/* 📋 Instant Drop Clipboard Modal (Phone ↔ Laptop Sync) */}
+      <InstantDropModal
+        isOpen={isClipOpen}
+        onClose={() => setIsClipOpen(false)}
+        clips={clipItems}
+        onAddClip={handleAddClip}
+        onDeleteClip={handleDeleteClip}
+      />
+
+      {/* ⌘ Command Palette */}
       <CommandPalette
         isOpen={isCommandOpen}
         onClose={() => setIsCommandOpen(false)}

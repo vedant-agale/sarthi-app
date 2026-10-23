@@ -6,7 +6,7 @@ import { Zap, CornerDownLeft, ArrowRight, Mic, MicOff } from 'lucide-react';
 interface UniversalInputProps {
   todayStr: string;
   onAddTask: (task: { title: string; category: string; target_date: string; target_time: string }) => Promise<void>;
-  onAddKhaata: (record: { person_name: string; amount: number; type: 'lena' | 'dena'; note: string; due_date: string }) => Promise<void>;
+  onAddKhaata: (record: { person_name: string; amount: number; type: 'lena' | 'dena' | 'kharcha'; note: string; due_date: string }) => Promise<void>;
   onSuccess: (msg: string) => void;
   inputRef?: React.RefObject<HTMLInputElement | null>;
 }
@@ -23,7 +23,6 @@ export const UniversalInput: React.FC<UniversalInputProps> = ({
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
-  // Native Speech Recognition Setup (Hands-Free Dictation)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const SpeechRecognition =
@@ -33,7 +32,7 @@ export const UniversalInput: React.FC<UniversalInputProps> = ({
         const recognition = new SpeechRecognition();
         recognition.continuous = false;
         recognition.interimResults = false;
-        recognition.lang = 'hi-IN'; // Hindi + English mixed dictation
+        recognition.lang = 'hi-IN';
 
         recognition.onresult = (event: any) => {
           const transcript = event.results[0][0].transcript;
@@ -41,13 +40,8 @@ export const UniversalInput: React.FC<UniversalInputProps> = ({
           setIsListening(false);
         };
 
-        recognition.onerror = () => {
-          setIsListening(false);
-        };
-
-        recognition.onend = () => {
-          setIsListening(false);
-        };
+        recognition.onerror = () => setIsListening(false);
+        recognition.onend = () => setIsListening(false);
 
         recognitionRef.current = recognition;
       }
@@ -89,9 +83,42 @@ export const UniversalInput: React.FC<UniversalInputProps> = ({
     if (!raw) return null;
 
     const lower = raw.toLowerCase();
-
-    // 1. Detect Khaata Entry Patterns
     const amountMatch = raw.match(/(\d+)/);
+
+    // 1A. Detect "Roz Ka Kharcha" (Daily Expense)
+    const hasKharchaKeywords =
+      lower.includes('kharcha') ||
+      lower.includes('kharch') ||
+      lower.includes('spent') ||
+      lower.includes('petrol') ||
+      lower.includes('recharge') ||
+      lower.includes('bill') ||
+      lower.includes('chai') ||
+      lower.includes('nasta') ||
+      lower.includes('nashta');
+
+    if (amountMatch && hasKharchaKeywords) {
+      const amount = parseInt(amountMatch[1], 10);
+      let cleaned = raw
+        .replace(/(\d+)/g, '')
+        .replace(/(rs|₹|rupaye|rupees|kharcha|kharch|spent|par|pe|ka|ki|ke|me|mein|hua)/gi, '')
+        .trim();
+
+      const itemTitle = cleaned || 'Daily Expense';
+
+      return {
+        target: 'khaata' as const,
+        data: {
+          person_name: itemTitle,
+          amount,
+          type: 'kharcha' as const,
+          note: 'Roz Ka Kharcha',
+          due_date: todayStr,
+        },
+      };
+    }
+
+    // 1B. Detect Udhaar Khaata Entry Patterns (Lena / Dena)
     const hasKhaataKeywords = 
       lower.includes('diye') || lower.includes('diya') || 
       lower.includes('dena') || lower.includes('lena') || 
@@ -181,7 +208,11 @@ export const UniversalInput: React.FC<UniversalInputProps> = ({
     try {
       if (parsedIntent.target === 'khaata') {
         await onAddKhaata(parsedIntent.data);
-        onSuccess(`Khaata saved: ₹${parsedIntent.data.amount} (${parsedIntent.data.person_name})`);
+        onSuccess(
+          parsedIntent.data.type === 'kharcha'
+            ? `Kharcha logged: ₹${parsedIntent.data.amount} (${parsedIntent.data.person_name})`
+            : `Khaata saved: ₹${parsedIntent.data.amount} (${parsedIntent.data.person_name})`
+        );
       } else {
         await onAddTask(parsedIntent.data);
         onSuccess(`Task added: "${parsedIntent.data.title}" [${parsedIntent.data.category}]`);
@@ -204,13 +235,12 @@ export const UniversalInput: React.FC<UniversalInputProps> = ({
           type="text"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder='Smart Bar: "Kal 8 baje gym" ya "Satya ko 500 diye"...'
+          placeholder='Smart Bar: "350 petrol kharcha", "Kal 8 baje gym", "Satya ko 500 diye"...'
           disabled={isSubmitting}
           className="w-full bg-neutral-900/90 border border-white/10 hover:border-white/20 focus:border-amber-500/50 rounded-2xl pl-10 pr-20 py-3 text-xs text-white placeholder-neutral-500 outline-none transition shadow-inner font-medium"
         />
 
         <div className="absolute right-2 flex items-center gap-1">
-          {/* 🎙️ Voice Dictation Button */}
           <button
             type="button"
             onClick={toggleVoiceDictation}
@@ -224,7 +254,6 @@ export const UniversalInput: React.FC<UniversalInputProps> = ({
             {isListening ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
           </button>
 
-          {/* Submit Action */}
           <button
             type="submit"
             disabled={!text.trim() || isSubmitting}
@@ -235,17 +264,29 @@ export const UniversalInput: React.FC<UniversalInputProps> = ({
         </div>
       </form>
 
-      {/* Live Parser Tag */}
       {parsedIntent && (
         <div className="flex items-center gap-2 px-2 py-1 text-[11px] font-mono text-neutral-400 animate-in fade-in duration-150">
           <ArrowRight className="w-3 h-3 text-amber-400 shrink-0" />
           {parsedIntent.target === 'khaata' ? (
             <span className="truncate">
-              Khaata Entry: <strong className="text-white">{parsedIntent.data.person_name}</strong> • 
-              <span className={parsedIntent.data.type === 'lena' ? 'text-emerald-400 font-bold ml-1' : 'text-rose-400 font-bold ml-1'}>
-                {parsedIntent.data.type === 'lena' ? 'Lena' : 'Dena'} ₹{parsedIntent.data.amount}
+              {parsedIntent.data.type === 'kharcha' ? '💸 Daily Kharcha: ' : 'Khaata Entry: '}
+              <strong className="text-white">{parsedIntent.data.person_name}</strong> • 
+              <span
+                className={
+                  parsedIntent.data.type === 'lena'
+                    ? 'text-emerald-400 font-bold ml-1'
+                    : parsedIntent.data.type === 'kharcha'
+                    ? 'text-amber-400 font-bold ml-1'
+                    : 'text-rose-400 font-bold ml-1'
+                }
+              >
+                {parsedIntent.data.type === 'lena'
+                  ? 'Lena'
+                  : parsedIntent.data.type === 'kharcha'
+                  ? 'Spent'
+                  : 'Dena'}{' '}
+                ₹{parsedIntent.data.amount}
               </span>
-              {parsedIntent.data.note && ` (${parsedIntent.data.note})`}
             </span>
           ) : (
             <span className="truncate">
