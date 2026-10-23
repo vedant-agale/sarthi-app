@@ -6,6 +6,7 @@ import { GrindMatrix } from '@/components/GrindMatrix';
 import { DailyIntelCard } from '@/components/DailyIntelCard';
 import { UniversalInput } from '@/components/UniversalInput';
 import { InstantDropModal, ClipItem } from '@/components/InstantDropModal';
+import { BikeVaultCard } from '@/components/BikeVaultCard';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -83,6 +84,7 @@ interface BannerNotification {
 
 const CLIP_PREFIX = '__CLIP__:';
 const KHARCHA_TAG = '[KHARCHA]';
+const BIKE_TAG = '[BIKE_SAVING]';
 
 const DEFAULT_ROUTINES = [
   { title: 'Naam Jap (108 Jap)', category: 'naam_jap' },
@@ -664,6 +666,41 @@ export default function Home() {
     }
   };
 
+  // 🏍️ Dream Bike Saving Handlers
+  const bikeSavingLogs = useMemo(() => {
+    return khaataRecords
+      .filter(r => r.note?.startsWith(BIKE_TAG))
+      .map(r => ({
+        id: r.id,
+        title: r.person_name,
+        amount: r.amount,
+        date: r.due_date,
+      }));
+  }, [khaataRecords]);
+
+  const handleAddBikeSaving = async (amount: number, sourceNote: string) => {
+    const newRecord: KhaataRecord = {
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'bike_' + Date.now(),
+      person_name: sourceNote || 'Bike Saving',
+      amount,
+      type: 'lena',
+      due_date: todayStr,
+      note: `${BIKE_TAG} ${sourceNote}`,
+      is_settled: false,
+    };
+
+    setKhaataRecords([newRecord, ...khaataRecords]);
+    triggerBanner('Bike Gullak Updated! 🏍️', `+₹${amount} bike fund me jud gaya!`, 'success');
+
+    if (navigator.onLine) {
+      const { error } = await supabase.from('khaata_records').insert([newRecord]);
+      if (error) enqueueOfflineAction({ id: newRecord.id, type: 'insert', table: 'khaata_records', payload: newRecord });
+    } else {
+      enqueueOfflineAction({ id: newRecord.id, type: 'insert', table: 'khaata_records', payload: newRecord });
+    }
+  };
+
+  // Khaata & Roz Ka Kharcha Operations
   const addKhaataEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!khaataName.trim() || !khaataAmount.trim()) {
@@ -839,23 +876,28 @@ export default function Home() {
 
   const todayStr = useMemo(() => getDeviceDate(), []);
 
+  // Filter out Bike Savings from normal Khaata Ledger
+  const ledgerOnlyRecords = useMemo(() => {
+    return khaataRecords.filter(r => !r.note?.startsWith(BIKE_TAG));
+  }, [khaataRecords]);
+
   const totalLenaHai = useMemo(() => {
-    return khaataRecords
+    return ledgerOnlyRecords
       .filter(r => r.type === 'lena' && !r.is_settled && !r.note?.startsWith(KHARCHA_TAG))
       .reduce((acc, cur) => acc + Number(cur.amount), 0);
-  }, [khaataRecords]);
+  }, [ledgerOnlyRecords]);
 
   const totalDenaHai = useMemo(() => {
-    return khaataRecords
+    return ledgerOnlyRecords
       .filter(r => r.type === 'dena' && !r.is_settled && !r.note?.startsWith(KHARCHA_TAG))
       .reduce((acc, cur) => acc + Number(cur.amount), 0);
-  }, [khaataRecords]);
+  }, [ledgerOnlyRecords]);
 
   const totalKharcha = useMemo(() => {
-    return khaataRecords
+    return ledgerOnlyRecords
       .filter(r => r.note?.startsWith(KHARCHA_TAG) && !r.is_settled)
       .reduce((acc, cur) => acc + Number(cur.amount), 0);
-  }, [khaataRecords]);
+  }, [ledgerOnlyRecords]);
 
   const sortedTodayTasks = useMemo(() => {
     const list = tasks.filter(t => t.target_date === todayStr);
@@ -987,6 +1029,10 @@ export default function Home() {
             }
           }}
           onAddKhaata={async (kData) => {
+            if (kData.type === 'bike') {
+              await handleAddBikeSaving(kData.amount, kData.person_name);
+              return;
+            }
             const isKharcha = kData.type === 'kharcha';
             const newKhaata: KhaataRecord = {
               id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'offline_k_' + Date.now(),
@@ -1385,6 +1431,13 @@ export default function Home() {
 
       {currentModule === 'khaata' && (
         <section className="space-y-4">
+          {/* 🏍️ Dream Bike Savings Vault */}
+          <BikeVaultCard
+            logs={bikeSavingLogs}
+            onAddSaving={handleAddBikeSaving}
+            onDeleteSaving={deleteKhaataRecord}
+          />
+
           <div className="grid grid-cols-3 gap-2">
             <div className="bg-neutral-900/80 border border-emerald-500/20 rounded-2xl p-3">
               <div className="flex items-center gap-1 text-emerald-400 text-[10px] font-bold mb-1">
@@ -1490,12 +1543,12 @@ export default function Home() {
           <div className="space-y-2">
             <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 px-1">Active Ledger & Expenses (Tap to Edit)</h3>
 
-            {khaataRecords.length === 0 ? (
+            {ledgerOnlyRecords.length === 0 ? (
               <div className="text-center py-10 bg-neutral-900/30 border border-white/5 rounded-3xl">
                 <p className="text-xs text-neutral-500">Khaata clear hai! Koi hisaab pending nahi.</p>
               </div>
             ) : (
-              khaataRecords.map(record => {
+              ledgerOnlyRecords.map(record => {
                 const isKharcha = record.note?.startsWith(KHARCHA_TAG);
                 const cleanNote = isKharcha ? record.note?.replace(KHARCHA_TAG, '').trim() : record.note;
                 const isOverdue = !isKharcha && record.due_date && record.due_date < todayStr && !record.is_settled;
