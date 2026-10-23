@@ -61,7 +61,7 @@ interface KhaataRecord {
   id: string;
   person_name: string;
   amount: number;
-  type: 'lena' | 'dena';
+  type: 'lena' | 'dena' | 'kharcha';
   due_date?: string | null;
   note?: string | null;
   is_settled: boolean;
@@ -104,13 +104,14 @@ const MANUAL_CATEGORIES = [
 ];
 
 export default function Home() {
-  // Command Palette, Focus Sprint & Instant Drop States
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => setIsMounted(true), []);
+
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [isClipOpen, setIsClipOpen] = useState(false);
   const [focusTask, setFocusTask] = useState<Task | null>(null);
   const universalInputRef = useRef<HTMLInputElement>(null);
 
-  // Global Ctrl + K / Cmd + K listener for Laptop
   useEffect(() => {
     const handleGlobalShortcuts = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -132,7 +133,6 @@ export default function Home() {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
-  // State: Tasks
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [category, setCategory] = useState<string>('Personal');
@@ -140,7 +140,6 @@ export default function Home() {
   const [dueTime, setDueTime] = useState(getDeviceTime());
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
-  // State: Shopping & Khaata
   const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([]);
   const [newShoppingItem, setNewShoppingItem] = useState('');
   const [khaataRecords, setKhaataRecords] = useState<KhaataRecord[]>([]);
@@ -150,11 +149,9 @@ export default function Home() {
   const [khaataDueDate, setKhaataDueDate] = useState('');
   const [khaataNote, setKhaataNote] = useState('');
 
-  // State: Khaata Edit & Partial Adjustment Modal
   const [editingKhaata, setEditingKhaata] = useState<KhaataRecord | null>(null);
   const [partialAmount, setPartialAmount] = useState<string>('');
 
-  // Widgets & Handles
   const [japCount, setJapCount] = useState(0);
   const [leetcodeUsername, setLeetcodeUsername] = useState('vedant-agale');
   const [githubUsername, setGithubUsername] = useState('vedant-agale');
@@ -164,7 +161,6 @@ export default function Home() {
   const [notificationsAllowed, setNotificationsAllowed] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Gestures
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<number>(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -183,7 +179,6 @@ export default function Home() {
 
   const isProtectedTask = (task: Task) => DEFAULT_CATEGORIES.includes(task.category);
 
-  // Service Worker & Notification Engine
   const sendNotification = async (title: string, body: string) => {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
     if (Notification.permission !== 'granted') return;
@@ -229,7 +224,6 @@ export default function Home() {
     }
   };
 
-  // Offline Queue & Sync Engine
   const enqueueOfflineAction = (action: OfflineAction) => {
     if (typeof window === 'undefined') return;
     const existing = JSON.parse(localStorage.getItem('sarthi_offline_queue') || '[]');
@@ -415,7 +409,6 @@ export default function Home() {
     };
   }, []);
 
-  // Task Operations
   const addTask = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalTitle = newTaskTitle.trim() ? newTaskTitle.trim() : category;
@@ -589,7 +582,6 @@ export default function Home() {
     }
   };
 
-  // 📋 Cross-Device Instant Drop Clipboard Operations
   const clipItems: ClipItem[] = useMemo(() => {
     return shoppingItems
       .filter(i => i.title.startsWith(CLIP_PREFIX))
@@ -628,7 +620,6 @@ export default function Home() {
     }
   };
 
-  // Shopping Operations
   const addShoppingItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newShoppingItem.trim()) return;
@@ -673,7 +664,6 @@ export default function Home() {
     }
   };
 
-  // Khaata & Roz Ka Kharcha Operations
   const addKhaataEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!khaataName.trim() || !khaataAmount.trim()) {
@@ -802,7 +792,6 @@ export default function Home() {
     triggerBanner('Adjusted', `Naya balance: ₹${newAmt}`, 'info');
   };
 
-  // Gestures
   const onTouchStartCard = (task: Task, e: React.TouchEvent) => {
     if (isProtectedTask(task)) return;
     touchStartXRef.current = e.touches[0].clientX;
@@ -850,7 +839,6 @@ export default function Home() {
 
   const todayStr = useMemo(() => getDeviceDate(), []);
 
-  // Khaata & Kharcha Totals
   const totalLenaHai = useMemo(() => {
     return khaataRecords
       .filter(r => r.type === 'lena' && !r.is_settled && !r.note?.startsWith(KHARCHA_TAG))
@@ -885,7 +873,6 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-black text-white px-4 py-6 sm:py-10 max-w-md mx-auto font-sans antialiased overflow-x-hidden select-none pb-24">
       
-      {/* 🟢 iOS Floating Pill */}
       {banner && (
         <div className="fixed top-4 inset-x-0 mx-auto max-w-xs px-4 z-50 animate-in fade-in slide-in-from-top-3">
           <div className="bg-neutral-900/95 backdrop-blur-2xl border border-white/10 rounded-3xl p-3 shadow-2xl flex items-center justify-between gap-3">
@@ -911,7 +898,6 @@ export default function Home() {
         </div>
       )}
 
-      {/*  Top App Header */}
       <header className="flex justify-between items-center mb-5">
         <div>
           <span className="text-[10px] font-bold tracking-widest uppercase text-amber-500">Autonomous Assistant</span>
@@ -924,28 +910,30 @@ export default function Home() {
             </div>
           )}
 
-          {/* 📋 Cross-Device Instant Drop Clipboard Trigger */}
-          <button
-            onClick={() => setIsClipOpen(true)}
-            className="relative p-2 rounded-full bg-neutral-900 border border-white/10 text-neutral-300 hover:text-white active:scale-95 transition"
-            title="Instant Drop Clipboard (Phone ↔ Laptop)"
-          >
-            <Clipboard className="w-4 h-4 text-emerald-400" />
-            {clipItems.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 text-black text-[9px] font-black flex items-center justify-center">
-                {clipItems.length}
-              </span>
-            )}
-          </button>
+          {isMounted && (
+            <button
+              onClick={() => setIsClipOpen(true)}
+              className="relative p-2 rounded-full bg-neutral-900 border border-white/10 text-neutral-300 hover:text-white active:scale-95 transition"
+              title="Instant Drop Clipboard (Phone ↔ Laptop)"
+            >
+              <Clipboard className="w-4 h-4 text-emerald-400" />
+              {clipItems.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 text-black text-[9px] font-black flex items-center justify-center">
+                  {clipItems.length}
+                </span>
+              )}
+            </button>
+          )}
 
-          {/* ⌘ Quick Command Trigger */}
-          <button 
-            onClick={() => setIsCommandOpen(true)}
-            className="p-2 rounded-full bg-neutral-900 border border-white/10 text-neutral-400 hover:text-white active:scale-95 transition"
-            title="Ctrl + K Command Palette"
-          >
-            <Command className="w-4 h-4 text-amber-400" />
-          </button>
+          {isMounted && (
+            <button 
+              onClick={() => setIsCommandOpen(true)}
+              className="p-2 rounded-full bg-neutral-900 border border-white/10 text-neutral-400 hover:text-white active:scale-95 transition"
+              title="Ctrl + K Command Palette"
+            >
+              <Command className="w-4 h-4 text-amber-400" />
+            </button>
+          )}
 
           <button 
             onClick={handleNotificationClick}
@@ -967,7 +955,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* 🧠 Autonomous Daily Intel + RPG XP Card */}
       <div className="mb-4">
         <DailyIntelCard
           tasks={tasks}
@@ -977,7 +964,6 @@ export default function Home() {
         />
       </div>
 
-      {/* ⚡ Smart Universal Input Bar */}
       <div className="mb-5">
         <UniversalInput
           inputRef={universalInputRef}
@@ -1023,7 +1009,6 @@ export default function Home() {
         />
       </div>
 
-      {/*  Module Switcher */}
       <div className="grid grid-cols-3 bg-neutral-900/90 p-1 rounded-2xl border border-white/10 text-xs font-semibold mb-5">
         <button
           onClick={() => setCurrentModule('routine')}
@@ -1051,7 +1036,6 @@ export default function Home() {
         </button>
       </div>
 
-      {/* MODULE 1: ROUTINE */}
       {currentModule === 'routine' && (
         <>
           <div className="grid grid-cols-3 bg-neutral-950 p-1 rounded-xl border border-white/5 text-[11px] font-semibold mb-5">
@@ -1077,7 +1061,6 @@ export default function Home() {
 
           {activeTab === 'today' && (
             <>
-              {/* Quick Deck */}
               <section className="grid grid-cols-3 gap-2 mb-5">
                 <div className="bg-neutral-900 border border-white/10 rounded-2xl p-2.5 flex flex-col justify-between">
                   <span className="text-[10px] font-bold text-rose-400 flex items-center gap-1">
@@ -1121,7 +1104,6 @@ export default function Home() {
                 </div>
               </section>
 
-              {/* Task Form */}
               <form onSubmit={addTask} className="space-y-3 mb-6 bg-neutral-900/70 border border-white/10 p-3.5 rounded-3xl shadow-lg">
                 <input
                   type="text"
@@ -1177,7 +1159,6 @@ export default function Home() {
                 </button>
               </form>
 
-              {/* Tasks List */}
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between px-1">
                   <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Today's Focus</h3>
@@ -1336,7 +1317,6 @@ export default function Home() {
         </>
       )}
 
-      {/* MODULE 2: BAZAAR */}
       {currentModule === 'bazaar' && (
         <section className="space-y-4">
           <div className="flex items-center justify-between px-1">
@@ -1403,10 +1383,8 @@ export default function Home() {
         </section>
       )}
 
-      {/* MODULE 3: KHAATA 2.0 (Udhaar + Roz Ka Kharcha) */}
       {currentModule === 'khaata' && (
         <section className="space-y-4">
-          {/* 3-Column Summary Deck */}
           <div className="grid grid-cols-3 gap-2">
             <div className="bg-neutral-900/80 border border-emerald-500/20 rounded-2xl p-3">
               <div className="flex items-center gap-1 text-emerald-400 text-[10px] font-bold mb-1">
@@ -1509,7 +1487,6 @@ export default function Home() {
             </button>
           </form>
 
-          {/* Khaata Active Records */}
           <div className="space-y-2">
             <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 px-1">Active Ledger & Expenses (Tap to Edit)</h3>
 
@@ -1597,7 +1574,6 @@ export default function Home() {
         </section>
       )}
 
-      {/*  Bottom Sheet: Edit & Partial Amount Adjust Modal for Khaata */}
       {editingKhaata && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 animate-in fade-in">
           <div className="bg-neutral-900 border border-white/15 w-full max-w-sm rounded-3xl p-5 space-y-4 shadow-2xl">
@@ -1667,11 +1643,12 @@ export default function Home() {
                   <label className="text-neutral-400 block mb-1">Type</label>
                   <select
                     value={editingKhaata.type}
-                    onChange={(e) => setEditingKhaata({ ...editingKhaata, type: e.target.value as 'lena' | 'dena' })}
+                    onChange={(e) => setEditingKhaata({ ...editingKhaata, type: e.target.value as 'lena' | 'dena' | 'kharcha' })}
                     className="w-full bg-black/60 border border-white/10 rounded-xl px-2 py-2 text-white focus:outline-none text-xs"
                   >
                     <option value="lena">Lena Hai (+)</option>
                     <option value="dena">Dena Hai (-)</option>
+                    <option value="kharcha">Kharcha (💸)</option>
                   </select>
                 </div>
                 <div>
@@ -1716,7 +1693,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Edit Milestone Modal for Tasks */}
       {editingTask && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
           <div className="bg-neutral-900 border border-white/15 w-full max-w-sm rounded-3xl p-5 space-y-4 shadow-2xl">
@@ -1807,7 +1783,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* 📋 Instant Drop Clipboard Modal (Phone ↔ Laptop Sync) */}
       <InstantDropModal
         isOpen={isClipOpen}
         onClose={() => setIsClipOpen(false)}
@@ -1816,7 +1791,6 @@ export default function Home() {
         onDeleteClip={handleDeleteClip}
       />
 
-      {/* ⌘ Command Palette */}
       <CommandPalette
         isOpen={isCommandOpen}
         onClose={() => setIsCommandOpen(false)}
@@ -1826,7 +1800,6 @@ export default function Home() {
         onOpenFocusSprint={() => setFocusTask(sortedTodayTasks.find(t => !t.is_completed) || sortedTodayTasks[0] || null)}
       />
 
-      {/* ⏱️ Deep Work Zen Focus Sprint Modal */}
       <FocusSprintModal
         isOpen={!!focusTask}
         taskTitle={focusTask?.title}
