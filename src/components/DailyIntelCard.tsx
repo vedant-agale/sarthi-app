@@ -16,7 +16,7 @@ interface KhaataRecord {
   id: string;
   person_name: string;
   amount: number;
-  type: 'lena' | 'dena';
+  type: 'lena' | 'dena' | 'kharcha'; // <-- YAHAN FIX KIYA HAI
   due_date?: string | null;
   note?: string | null;
   is_settled: boolean;
@@ -48,13 +48,11 @@ export const DailyIntelCard: React.FC<DailyIntelProps> = ({
       t => t.category.toLowerCase().includes('github') && t.is_completed
     );
 
-    // Filter out Kharcha records from Overdue Udhaar
     const overdueKhaata = khaataRecords.filter(
       r => !r.note?.startsWith('[KHARCHA]') && r.due_date && r.due_date < todayStr && !r.is_settled
     );
 
-    // 🎮 RPG XP & Level Calculation
-    let rawXp = naamJapCount; // +1 XP per jap
+    let rawXp = naamJapCount;
     let penaltyXp = 0;
 
     tasks.forEach(t => {
