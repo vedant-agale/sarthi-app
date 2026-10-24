@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Sparkles, AlertTriangle, Clock, Shield, Zap } from 'lucide-react';
+import { Sparkles, AlertTriangle, Clock, Shield, Zap, Bot, Film, Flame } from 'lucide-react';
 
 interface Task {
   id: string;
@@ -16,7 +16,7 @@ interface KhaataRecord {
   id: string;
   person_name: string;
   amount: number;
-  type: string; // <-- Flexible string type so Vercel TS never complains
+  type: string;
   due_date?: string | null;
   note?: string | null;
   is_settled: boolean;
@@ -57,6 +57,69 @@ export const DailyIntelCard: React.FC<DailyIntelProps> = ({
         !r.is_settled
     );
 
+    // Cashflow Analysis for Assistant Brain
+    const totalKharcha = khaataRecords
+      .filter(r => r.note?.startsWith('[KHARCHA]') && !r.is_settled)
+      .reduce((acc, cur) => acc + Number(cur.amount), 0);
+
+    const totalBikeSaved = khaataRecords
+      .filter(r => r.note?.startsWith('[BIKE_SAVING]'))
+      .reduce((acc, cur) => acc + Number(cur.amount), 0);
+
+    // Creator Projects in Pipeline
+    const activeCreatorTasks = todayTasks.filter(
+      t =>
+        !t.is_completed &&
+        (t.category.includes('editing') ||
+          t.category.includes('work') ||
+          t.category.includes('project') ||
+          /^\[(IDEA|SHOOT|EDIT|READY)\]/i.test(t.title))
+    );
+
+    // Stuck / Procrastinated Task Detection
+    const mostDelayedTask = pendingTasks.reduce((prev: Task | null, curr) => {
+      if ((curr.carry_forward_count || 0) > (prev?.carry_forward_count || 0)) {
+        return curr;
+      }
+      return prev;
+    }, null);
+
+    // 🧠 Generate Smart Assistant Actionable Nudges
+    const assistantNudges: string[] = [];
+
+    if (totalKharcha > totalBikeSaved && totalKharcha > 0) {
+      assistantNudges.push(
+        `💸 Wallet Watch: Kharcha (₹${totalKharcha}) teri Bike Saving (₹${totalBikeSaved}) se aage nikal gaya hai. Aaj no faltu spend!`
+      );
+    }
+
+    if (activeCreatorTasks.length > 0) {
+      const cleanName = activeCreatorTasks[0].title.replace(/^\[(IDEA|SHOOT|EDIT|READY)\]\s*/i, '');
+      assistantNudges.push(
+        `🎬 Creator Pipeline: "${cleanName}" pending hai. Stage pill tap karke next phase me push kar!`
+      );
+    }
+
+    if (mostDelayedTask && (mostDelayedTask.carry_forward_count || 0) >= 2) {
+      const cleanDelayed = mostDelayedTask.title.replace(/^\[(IDEA|SHOOT|EDIT|READY)\]\s*/i, '');
+      assistantNudges.push(
+        `⏳ Procrastination Alert: "${cleanDelayed}" ${mostDelayedTask.carry_forward_count} din se carry-forward ho raha hai. 25m Focus Sprint laga ke aaj khatam kar!`
+      );
+    }
+
+    if (assistantNudges.length === 0) {
+      if (!leetcodeDone || !githubDone) {
+        assistantNudges.push(
+          `⚡ Next Best Move: Pehle ${!leetcodeDone ? 'LeetCode AC' : 'GitHub Push'} verify kar taaki +50 XP aur daily streak lock ho jaye.`
+        );
+      } else {
+        assistantNudges.push(
+          `🔥 System Optimal: Tere core streaks aur finances control me hain. Keep grinding!`
+        );
+      }
+    }
+
+    // 🎮 RPG XP & Level Calculation
     let rawXp = naamJapCount;
     let penaltyXp = 0;
 
@@ -130,6 +193,7 @@ export const DailyIntelCard: React.FC<DailyIntelProps> = ({
       currentLevelXp,
       xpProgress,
       penaltyXp,
+      assistantNudges,
     };
   }, [tasks, khaataRecords, todayStr, naamJapCount]);
 
@@ -204,6 +268,18 @@ export const DailyIntelCard: React.FC<DailyIntelProps> = ({
       <p className="text-xs text-neutral-300 leading-relaxed font-medium">
         {intel.message}
       </p>
+
+      {/* 🤖 Autonomous Personal Assistant Nudges */}
+      <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-2.5 space-y-1.5">
+        <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-amber-400">
+          <Bot className="w-3.5 h-3.5" /> SARTHI AI Assistant Insights
+        </div>
+        {intel.assistantNudges.map((nudge, idx) => (
+          <p key={idx} className="text-[11px] text-neutral-200 leading-snug font-medium">
+            {nudge}
+          </p>
+        ))}
+      </div>
 
       <div className="flex items-center justify-between pt-2 border-t border-white/5 text-[11px] font-mono text-neutral-400">
         <span>Naam Jap: <strong className="text-white">{intel.japProgress}/108</strong></span>
