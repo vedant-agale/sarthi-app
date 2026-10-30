@@ -1,5 +1,6 @@
 'use client';
 
+import { VoiceAssistantModal } from '@/components/VoiceAssistantModal';
 import { CommandPalette } from '@/components/CommandPalette';
 import { FocusSprintModal } from '@/components/FocusSprintModal';
 import { GrindMatrix } from '@/components/GrindMatrix';
@@ -39,7 +40,8 @@ import {
   Play,
   Clipboard,
   Receipt,
-  Film
+  Film,
+  Bot
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -121,6 +123,7 @@ export default function Home() {
 
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [isClipOpen, setIsClipOpen] = useState(false);
+  const [isVoiceAssistantOpen, setIsVoiceAssistantOpen] = useState(false);
   const [focusTask, setFocusTask] = useState<Task | null>(null);
   const universalInputRef = useRef<HTMLInputElement>(null);
 
@@ -191,7 +194,6 @@ export default function Home() {
 
   const isProtectedTask = (task: Task) => DEFAULT_CATEGORIES.includes(task.category);
 
-  // Check if task belongs to Creator / Project Pipeline
   const isCreatorTask = (task: Task) => {
     const cat = task.category.toLowerCase();
     return (
@@ -213,7 +215,6 @@ export default function Home() {
     return { stageObj: CREATOR_STAGES[0], cleanTitle: title };
   };
 
-  // Cycle Creator Stage on Tap
   const cycleCreatorStage = async (task: Task, e: React.MouseEvent) => {
     e.stopPropagation();
     const { stageObj, cleanTitle } = getTaskStageInfo(task.title);
@@ -226,7 +227,7 @@ export default function Home() {
 
     if (autoComplete) {
       confetti({ particleCount: 80, spread: 70, origin: { y: 0.7 } });
-      triggerBanner('Project Ready! 🚀', `"${cleanTitle}" uploaded/completed!`, 'success');
+      triggerBanner('Project Ready! 🚀', `"${cleanTitle}" completed/uploaded!`, 'success');
     } else {
       triggerBanner('Stage Updated 🎬', `${cleanTitle} ➔ ${nextStage.label}`, 'info');
     }
@@ -799,7 +800,7 @@ export default function Home() {
       person_name: khaataName.trim(),
       amount: parseFloat(khaataAmount),
       type: isKharcha ? 'dena' : khaataType,
-      due_date: isKharcha ? todayStr : (khaataDueDate || null),
+      due_date: isKharcha ? todayStr : (khaataDueDate || todayStr),
       note: finalNote,
       is_settled: false
     };
@@ -957,7 +958,6 @@ export default function Home() {
 
   const todayStr = useMemo(() => getDeviceDate(), []);
 
-  // Filter out Bike Savings from normal Khaata Ledger
   const ledgerOnlyRecords = useMemo(() => {
     return khaataRecords.filter(r => !r.note?.startsWith(BIKE_TAG));
   }, [khaataRecords]);
@@ -1031,6 +1031,17 @@ export default function Home() {
             <div className="flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2.5 py-1 rounded-full text-[10px] font-bold">
               <WifiOff className="w-3 h-3" /> Offline
             </div>
+          )}
+
+          {/* 🤖 Talk to SARTHI Voice Assistant Trigger */}
+          {isMounted && (
+            <button
+              onClick={() => setIsVoiceAssistantOpen(true)}
+              className="p-2 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500 hover:text-black active:scale-95 transition shadow-sm"
+              title="Talk to SARTHI (Voice Assistant)"
+            >
+              <Bot className="w-4 h-4" />
+            </button>
           )}
 
           {isMounted && (
@@ -1127,7 +1138,7 @@ export default function Home() {
               amount: kData.amount,
               type: isKharcha ? 'dena' : kData.type,
               note: isKharcha ? `${KHARCHA_TAG} ${kData.note}` : (kData.note || null),
-              due_date: kData.due_date || null,
+              due_date: kData.due_date || todayStr,
               is_settled: false
             };
             setKhaataRecords([newKhaata, ...khaataRecords]);
@@ -1366,7 +1377,6 @@ export default function Home() {
                         </div>
 
                         <div className="flex items-center gap-1.5 shrink-0">
-                          {/* 🎬 Creator Stage Pill Button */}
                           {creatorMode && !task.is_completed && (
                             <button
                               onClick={(e) => cycleCreatorStage(task, e)}
@@ -1529,226 +1539,220 @@ export default function Home() {
         </section>
       )}
 
-     {/* MODULE 3: KHAATA */}
-{currentModule === 'khaata' && (
-  <section className="space-y-4">
-    {/* 🏍️ Dream Bike Savings Vault */}
-    <BikeVaultCard
-      logs={bikeSavingLogs}
-      onAddSaving={handleAddBikeSaving}
-      onDeleteSaving={deleteKhaataRecord}
-    />
+      {/* MODULE 3: KHAATA */}
+      {currentModule === 'khaata' && (
+        <section className="space-y-4">
+          <BikeVaultCard
+            logs={bikeSavingLogs}
+            onAddSaving={handleAddBikeSaving}
+            onDeleteSaving={deleteKhaataRecord}
+          />
 
-    {/* 📊 Monthly Money Radar */}
-    <MoneyRadarCard
-      totalBikeSaved={totalBikeSaved}
-      totalKharcha={totalKharcha}
-      totalLena={totalLenaHai}
-      totalDena={totalDenaHai}
-    />
+          <MoneyRadarCard
+            totalBikeSaved={totalBikeSaved}
+            totalKharcha={totalKharcha}
+            totalLena={totalLenaHai}
+            totalDena={totalDenaHai}
+          />
 
-    {/* 1. Clickable Interactive Top Summary Cards */}
-    <div className="grid grid-cols-3 gap-2">
-      <div 
-        onClick={() => setKhaataType('lena')}
-        className={`bg-neutral-900/80 border rounded-2xl p-3 cursor-pointer transition active:scale-95 ${
-          khaataType === 'lena' ? 'border-emerald-500 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/50' : 'border-emerald-500/20'
-        }`}
-      >
-        <div className="flex items-center gap-1 text-emerald-400 text-[10px] font-bold mb-1">
-          <ArrowDownLeft className="w-3.5 h-3.5" /> Lena Hai
-        </div>
-        <span className="text-sm font-mono font-bold text-white">₹{totalLenaHai}</span>
-      </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div 
+              onClick={() => setKhaataType('lena')}
+              className={`bg-neutral-900/80 border rounded-2xl p-3 cursor-pointer transition active:scale-95 ${
+                khaataType === 'lena' ? 'border-emerald-500 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/50' : 'border-emerald-500/20'
+              }`}
+            >
+              <div className="flex items-center gap-1 text-emerald-400 text-[10px] font-bold mb-1">
+                <ArrowDownLeft className="w-3.5 h-3.5" /> Lena Hai
+              </div>
+              <span className="text-sm font-mono font-bold text-white">₹{totalLenaHai}</span>
+            </div>
 
-      <div 
-        onClick={() => setKhaataType('dena')}
-        className={`bg-neutral-900/80 border rounded-2xl p-3 cursor-pointer transition active:scale-95 ${
-          khaataType === 'dena' ? 'border-rose-500 shadow-lg shadow-rose-500/10 ring-1 ring-rose-500/50' : 'border-rose-500/20'
-        }`}
-      >
-        <div className="flex items-center gap-1 text-rose-400 text-[10px] font-bold mb-1">
-          <ArrowUpRight className="w-3.5 h-3.5" /> Dena Hai
-        </div>
-        <span className="text-sm font-mono font-bold text-white">₹{totalDenaHai}</span>
-      </div>
+            <div 
+              onClick={() => setKhaataType('dena')}
+              className={`bg-neutral-900/80 border rounded-2xl p-3 cursor-pointer transition active:scale-95 ${
+                khaataType === 'dena' ? 'border-rose-500 shadow-lg shadow-rose-500/10 ring-1 ring-rose-500/50' : 'border-rose-500/20'
+              }`}
+            >
+              <div className="flex items-center gap-1 text-rose-400 text-[10px] font-bold mb-1">
+                <ArrowUpRight className="w-3.5 h-3.5" /> Dena Hai
+              </div>
+              <span className="text-sm font-mono font-bold text-white">₹{totalDenaHai}</span>
+            </div>
 
-      <div 
-        onClick={() => setKhaataType('kharcha')}
-        className={`bg-neutral-900/80 border rounded-2xl p-3 cursor-pointer transition active:scale-95 ${
-          khaataType === 'kharcha' ? 'border-amber-500 shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/50' : 'border-amber-500/20'
-        }`}
-      >
-        <div className="flex items-center gap-1 text-amber-400 text-[10px] font-bold mb-1">
-          <Receipt className="w-3.5 h-3.5" /> Kharcha
-        </div>
-        <span className="text-sm font-mono font-bold text-amber-400">₹{totalKharcha}</span>
-      </div>
-    </div>
+            <div 
+              onClick={() => setKhaataType('kharcha')}
+              className={`bg-neutral-900/80 border rounded-2xl p-3 cursor-pointer transition active:scale-95 ${
+                khaataType === 'kharcha' ? 'border-amber-500 shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/50' : 'border-amber-500/20'
+              }`}
+            >
+              <div className="flex items-center gap-1 text-amber-400 text-[10px] font-bold mb-1">
+                <Receipt className="w-3.5 h-3.5" /> Kharcha
+              </div>
+              <span className="text-sm font-mono font-bold text-amber-400">₹{totalKharcha}</span>
+            </div>
+          </div>
 
-    {/* 2 & 4. Form with Dynamic Submit Color & Auto System Date/Time */}
-    <form onSubmit={addKhaataEntry} className="space-y-2.5 bg-neutral-900/60 border border-white/10 p-3.5 rounded-3xl">
-      <div className="text-[11px] font-bold text-neutral-400 px-1 flex items-center justify-between">
-        <span>Adding new entry for:</span>
-        <span className={`px-2 py-0.5 rounded-md font-mono ${
-          khaataType === 'lena' ? 'bg-emerald-500/20 text-emerald-400' :
-          khaataType === 'dena' ? 'bg-rose-500/20 text-rose-400' :
-          'bg-amber-500/20 text-amber-400'
-        }`}>
-          {khaataType === 'lena' ? 'Lena Hai (+)' : khaataType === 'dena' ? 'Dena Hai (-)' : 'Roz Ka Kharcha (💸)'}
-        </span>
-      </div>
+          <form onSubmit={addKhaataEntry} className="space-y-2.5 bg-neutral-900/60 border border-white/10 p-3.5 rounded-3xl">
+            <div className="text-[11px] font-bold text-neutral-400 px-1 flex items-center justify-between">
+              <span>Adding new entry for:</span>
+              <span className={`px-2 py-0.5 rounded-md font-mono ${
+                khaataType === 'lena' ? 'bg-emerald-500/20 text-emerald-400' :
+                khaataType === 'dena' ? 'bg-rose-500/20 text-rose-400' :
+                'bg-amber-500/20 text-amber-400'
+              }`}>
+                {khaataType === 'lena' ? 'Lena Hai (+)' : khaataType === 'dena' ? 'Dena Hai (-)' : 'Roz Ka Kharcha (💸)'}
+              </span>
+            </div>
 
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <input
-          type="text"
-          placeholder={khaataType === 'kharcha' ? 'Item (e.g. Petrol, Chai)...' : 'Kiska naam hai?...'}
-          value={khaataName}
-          onChange={(e) => setKhaataName(e.target.value)}
-          className="bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none"
-        />
-        <input
-          type="number"
-          placeholder="Rupaye ₹ (e.g. 350)"
-          value={khaataAmount}
-          onChange={(e) => setKhaataAmount(e.target.value)}
-          className="bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none font-mono"
-        />
-      </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <input
+                type="text"
+                placeholder={khaataType === 'kharcha' ? 'Item (e.g. Petrol, Chai)...' : 'Kiska naam hai?...'}
+                value={khaataName}
+                onChange={(e) => setKhaataName(e.target.value)}
+                className="bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none"
+              />
+              <input
+                type="number"
+                placeholder="Rupaye ₹ (e.g. 350)"
+                value={khaataAmount}
+                onChange={(e) => setKhaataAmount(e.target.value)}
+                className="bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none font-mono"
+              />
+            </div>
 
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="flex items-center gap-1 bg-black/50 border border-white/10 rounded-xl px-2.5 py-2 text-neutral-400">
-          <Calendar className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-          <span className="text-[11px] font-mono text-neutral-200">Auto: {getDeviceDate()}</span>
-        </div>
-        <input
-          type="text"
-          placeholder="Note / Category (Optional)..."
-          value={khaataNote}
-          onChange={(e) => setKhaataNote(e.target.value)}
-          className="bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none"
-        />
-      </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="flex items-center gap-1 bg-black/50 border border-white/10 rounded-xl px-2.5 py-2 text-neutral-400">
+                <Calendar className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="text-[11px] font-mono text-neutral-200">Auto: {getDeviceDate()}</span>
+              </div>
+              <input
+                type="text"
+                placeholder="Note / Category (Optional)..."
+                value={khaataNote}
+                onChange={(e) => setKhaataNote(e.target.value)}
+                className="bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none"
+              />
+            </div>
 
-      <button
-        type="submit"
-        className={`w-full font-bold text-xs py-2.5 rounded-xl transition active:scale-95 ${
-          khaataType === 'lena'
-            ? 'bg-emerald-500 hover:bg-emerald-400 text-black'
-            : khaataType === 'dena'
-            ? 'bg-rose-500 hover:bg-rose-400 text-white'
-            : 'bg-amber-500 hover:bg-amber-400 text-black'
-        }`}
-      >
-        {khaataType === 'lena' ? 'Lena Hai' : khaataType === 'dena' ? 'Dena Hai Me' : 'Kharcha Note Karo 💸'}
-      </button>
-    </form>
+            <button
+              type="submit"
+              className={`w-full font-bold text-xs py-2.5 rounded-xl transition active:scale-95 ${
+                khaataType === 'lena'
+                  ? 'bg-emerald-500 hover:bg-emerald-400 text-black'
+                  : khaataType === 'dena'
+                  ? 'bg-rose-500 hover:bg-rose-400 text-white'
+                  : 'bg-amber-500 hover:bg-amber-400 text-black'
+              }`}
+            >
+              {khaataType === 'lena' ? 'Lena Hai Me Save Karo ✓' : khaataType === 'dena' ? 'Dena Hai Me Save Karo ✓' : 'Kharcha Note Karo 💸'}
+            </button>
+          </form>
 
-    {/* 5. Filtered Ledger View (Specific to Selected Card) */}
-    <div className="space-y-2">
-      <div className="flex items-center justify-between px-1">
-        <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
-          Showing: {khaataType === 'lena' ? 'Lena Hai Records' : khaataType === 'dena' ? 'Dena Hai Records' : 'Kharcha Expenses'}
-        </h3>
-        <span className="text-[10px] text-neutral-400 font-mono">Tap card above to switch</span>
-      </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                Showing: {khaataType === 'lena' ? 'Lena Hai Records' : khaataType === 'dena' ? 'Dena Hai Records' : 'Kharcha Expenses'}
+              </h3>
+              <span className="text-[10px] text-neutral-400 font-mono">Tap card above to switch</span>
+            </div>
 
-      {khaataRecords.filter(r => {
-        const isKharcha = r.note?.startsWith(KHARCHA_TAG);
-        if (khaataType === 'kharcha') return isKharcha && !r.is_settled;
-        return !isKharcha && r.type === khaataType && !r.is_settled;
-      }).length === 0 ? (
-        <div className="text-center py-10 bg-neutral-900/30 border border-white/5 rounded-3xl">
-          <p className="text-xs text-neutral-500">Is category me koi active record nahi hai!</p>
-        </div>
-      ) : (
-        khaataRecords
-          .filter(r => {
-            const isKharcha = r.note?.startsWith(KHARCHA_TAG);
-            if (khaataType === 'kharcha') return isKharcha && !r.is_settled;
-            return !isKharcha && r.type === khaataType && !r.is_settled;
-          })
-          .map(record => {
-            const isKharcha = record.note?.startsWith(KHARCHA_TAG);
-            const cleanNote = isKharcha ? record.note?.replace(KHARCHA_TAG, '').trim() : record.note;
-            const isOverdue = !isKharcha && record.due_date && record.due_date < todayStr && !record.is_settled;
+            {khaataRecords.filter(r => {
+              const isKharcha = r.note?.startsWith(KHARCHA_TAG);
+              if (khaataType === 'kharcha') return isKharcha && !r.is_settled;
+              return !isKharcha && r.type === khaataType && !r.is_settled;
+            }).length === 0 ? (
+              <div className="text-center py-10 bg-neutral-900/30 border border-white/5 rounded-3xl">
+                <p className="text-xs text-neutral-500">Is category me koi active record nahi hai!</p>
+              </div>
+            ) : (
+              khaataRecords
+                .filter(r => {
+                  const isKharcha = r.note?.startsWith(KHARCHA_TAG);
+                  if (khaataType === 'kharcha') return isKharcha && !r.is_settled;
+                  return !isKharcha && r.type === khaataType && !r.is_settled;
+                })
+                .map(record => {
+                  const isKharcha = record.note?.startsWith(KHARCHA_TAG);
+                  const cleanNote = isKharcha ? record.note?.replace(KHARCHA_TAG, '').trim() : record.note;
+                  const isOverdue = !isKharcha && record.due_date && record.due_date < todayStr && !record.is_settled;
 
-            return (
-              <div
-                key={record.id}
-                onClick={() => {
-                  setEditingKhaata(record);
-                  setPartialAmount('');
-                }}
-                className={`p-3.5 rounded-2xl border transition flex items-center justify-between cursor-pointer active:scale-[0.99] select-none ${
-                  record.is_settled
-                    ? 'bg-neutral-900/30 border-white/5 opacity-50'
-                    : isOverdue 
-                    ? 'bg-rose-950/20 border-rose-500/40 hover:border-rose-500/60' 
-                    : 'bg-neutral-900/80 border-white/10 hover:border-white/20'
-                }`}
-              >
-                <div className="flex-1 mr-2 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-white truncate">
-                      {record.person_name}
-                    </span>
-                    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 ${
-                      isKharcha
-                        ? 'bg-amber-500/20 text-amber-400'
-                        : record.type === 'lena'
-                        ? 'bg-emerald-500/20 text-emerald-400'
-                        : 'bg-rose-500/20 text-rose-400'
-                    }`}>
-                      {isKharcha ? '💸 Kharcha' : record.type === 'lena' ? 'Lena Hai' : 'Dena Hai'}
-                    </span>
-                    {isOverdue && (
-                      <span className="text-[9px] bg-rose-600 text-white px-1.5 py-0.5 rounded-md font-bold shrink-0">
-                        OVERDUE!
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 mt-1 text-[10px] text-neutral-400 font-mono">
-                    <span className="text-white font-bold">₹{record.amount}</span>
-                    {record.due_date && <span>• {isKharcha ? 'Date:' : 'Due:'} {record.due_date}</span>}
-                    {cleanNote && <span className="truncate max-w-[140px]">• "{cleanNote}"</span>}
-                  </div>
-                </div>
-
-                {/* 3. Kharcha 'Done' button removed, only Nipta Diya / Archive for Ledger */}
-                <div className="flex items-center gap-2 shrink-0">
-                  {!isKharcha && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleKhaataSettled(record);
+                  return (
+                    <div
+                      key={record.id}
+                      onClick={() => {
+                        setEditingKhaata(record);
+                        setPartialAmount('');
                       }}
-                      className={`text-[11px] font-bold px-3 py-1.5 rounded-xl transition active:scale-95 ${
-                        record.is_settled 
-                          ? 'bg-neutral-800 text-neutral-400' 
-                          : 'bg-white text-black hover:bg-neutral-200'
+                      className={`p-3.5 rounded-2xl border transition flex items-center justify-between cursor-pointer active:scale-[0.99] select-none ${
+                        record.is_settled
+                          ? 'bg-neutral-900/30 border-white/5 opacity-50'
+                          : isOverdue 
+                          ? 'bg-rose-950/20 border-rose-500/40 hover:border-rose-500/60' 
+                          : 'bg-neutral-900/80 border-white/10 hover:border-white/20'
                       }`}
                     >
-                      {record.is_settled ? 'Archived ✓' : 'Nipta Diya'}
-                    </button>
-                  )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteKhaataRecord(record.id);
-                    }}
-                    className="p-1.5 text-neutral-500 hover:text-rose-400 transition rounded-xl"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            );
-          })
+                      <div className="flex-1 mr-2 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-white truncate">
+                            {record.person_name}
+                          </span>
+                          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 ${
+                            isKharcha
+                              ? 'bg-amber-500/20 text-amber-400'
+                              : record.type === 'lena'
+                              ? 'bg-emerald-500/20 text-emerald-400'
+                              : 'bg-rose-500/20 text-rose-400'
+                          }`}>
+                            {isKharcha ? '💸 Kharcha' : record.type === 'lena' ? 'Lena Hai' : 'Dena Hai'}
+                          </span>
+                          {isOverdue && (
+                            <span className="text-[9px] bg-rose-600 text-white px-1.5 py-0.5 rounded-md font-bold shrink-0">
+                              OVERDUE!
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 text-[10px] text-neutral-400 font-mono">
+                          <span className="text-white font-bold">₹{record.amount}</span>
+                          {record.due_date && <span>• {isKharcha ? 'Date:' : 'Due:'} {record.due_date}</span>}
+                          {cleanNote && <span className="truncate max-w-[140px]">• "{cleanNote}"</span>}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {!isKharcha && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleKhaataSettled(record);
+                            }}
+                            className={`text-[11px] font-bold px-3 py-1.5 rounded-xl transition active:scale-95 ${
+                              record.is_settled 
+                                ? 'bg-neutral-800 text-neutral-400' 
+                                : 'bg-white text-black hover:bg-neutral-200'
+                            }`}
+                          >
+                            {record.is_settled ? 'Archived ✓' : 'Nipta Diya'}
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteKhaataRecord(record.id);
+                          }}
+                          className="p-1.5 text-neutral-500 hover:text-rose-400 transition rounded-xl"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+            )}
+          </div>
+        </section>
       )}
-    </div>
-  </section>
-)}
 
       {editingKhaata && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 animate-in fade-in">
@@ -1833,7 +1837,7 @@ export default function Home() {
                     type="date" 
                     value={editingKhaata.due_date || ''} 
                     onChange={(e) => setEditingKhaata({ ...editingKhaata, due_date: e.target.value || null })}
-                    className="w-full bg-black/60 border border-white/10 rounded-xl px-2 py-2 text-white text-xs focus:outline-none"
+                    className="w-full bg-black/60 border border-white/10 rounded-xl px-2.5 py-2 text-white text-xs focus:outline-none"
                   />
                 </div>
               </div>
@@ -1958,6 +1962,52 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* 🤖 SARTHI Conversational Voice Assistant Modal */}
+      <VoiceAssistantModal
+        isOpen={isVoiceAssistantOpen}
+        onClose={() => setIsVoiceAssistantOpen(false)}
+        tasks={tasks}
+        khaataRecords={khaataRecords}
+        todayStr={todayStr}
+        japCount={japCount}
+        onSwitchModule={setCurrentModule}
+        onIncrementJap={handleJapIncrement}
+        onAddTask={async (tData) => {
+          const normCat = tData.category.toLowerCase().replace(/[^a-z0-9]/g, '_');
+          const isCreator = normCat.includes('editing') || normCat.includes('work') || normCat.includes('project');
+          const finalTitle = isCreator && !/^\[(IDEA|SHOOT|EDIT|READY)\]/i.test(tData.title)
+            ? `[IDEA] ${tData.title}`
+            : tData.title;
+
+          const newTask: Task = {
+            id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'offline_' + Date.now(),
+            title: finalTitle,
+            category: normCat,
+            target_date: tData.target_date,
+            due_time: tData.target_time || null,
+            is_completed: false,
+            carry_forward_count: 0
+          };
+          saveTasksState([newTask, ...tasks]);
+          if (navigator.onLine) await supabase.from('tasks').insert([newTask]);
+          else enqueueOfflineAction({ id: newTask.id, type: 'insert', table: 'tasks', payload: newTask });
+        }}
+        onAddKharcha={async (amount, item) => {
+          const newRecord: KhaataRecord = {
+            id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'offline_k_' + Date.now(),
+            person_name: item,
+            amount,
+            type: 'dena',
+            due_date: todayStr,
+            note: `${KHARCHA_TAG} ${item}`,
+            is_settled: false,
+          };
+          setKhaataRecords([newRecord, ...khaataRecords]);
+          if (navigator.onLine) await supabase.from('khaata_records').insert([newRecord]);
+          else enqueueOfflineAction({ id: newRecord.id, type: 'insert', table: 'khaata_records', payload: newRecord });
+        }}
+      />
 
       <InstantDropModal
         isOpen={isClipOpen}
