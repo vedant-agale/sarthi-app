@@ -1139,100 +1139,90 @@ export default function Home() {
       )}
 
       {/*  Top App Header with Streak Shield & Night Debrief Triggers */}
-      <header className="flex justify-between items-center mb-5">
-        <div>
-          <span className="text-[10px] font-bold tracking-widest uppercase text-amber-500">Autonomous Assistant</span>
-          <h1 className="text-2xl font-black tracking-tight text-white">SARTHI</h1>
-        </div>
-        <div className="flex items-center gap-1.5">
-          {!isOnline && (
-            <div className="flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2.5 py-1 rounded-full text-[10px] font-bold">
-              <WifiOff className="w-3 h-3" /> Offline
-            </div>
-          )}
+     <header className="flex justify-between items-center mb-5">
+  <div>
+    <span className="text-[10px] font-bold tracking-widest uppercase text-amber-500">Autonomous Assistant</span>
+    <h1 className="text-2xl font-black tracking-tight text-white">SARTHI</h1>
+  </div>
 
-          {/* 🛡️ Streak Freeze Shield Counter */}
-          {isMounted && (
-            <button
-              onClick={() => triggerBanner('Streak Shield 🛡️', `Aapke pass ${streakShields} freeze shields hain. Busy days me streak drop nahi hogi.`, 'info')}
-              className={`flex items-center gap-1 px-2 py-1.5 rounded-full border text-[10px] font-mono font-bold transition active:scale-95 ${
-                streakShields > 0
-                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                  : 'bg-neutral-900 border-white/10 text-neutral-500'
-              }`}
-              title="Streak Freeze Shields (Anti-Drop Insurance)"
-            >
-              <Shield className="w-3 h-3 fill-amber-400/20" />
-              <span>x{streakShields}</span>
-            </button>
-          )}
+  <div className="flex items-center gap-1.5">
+    {!isOnline && (
+      <div className="flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-1 rounded-full text-[10px] font-bold">
+        <WifiOff className="w-3 h-3" />
+      </div>
+    )}
 
-          {/* 🌙 Night Debrief / Close Day Trigger */}
-          {isMounted && (
-            <button
-              onClick={() => setIsNightDebriefOpen(true)}
-              className="p-2 rounded-full bg-neutral-900 border border-white/10 text-indigo-400 hover:text-white active:scale-95 transition"
-              title="Night Debrief & Kal Ka Auto-Planner"
-            >
-              <Moon className="w-4 h-4 fill-indigo-400/20" />
-            </button>
-          )}
+    {/* 🌙 Night Debrief (Sirf Shaam 8 PM ke baad dikhega) */}
+    {isMounted && currentTime.getHours() >= 20 && (
+      <button
+        onClick={() => setIsNightDebriefOpen(true)}
+        className="p-2 rounded-full bg-neutral-900 border border-white/10 text-indigo-400 hover:text-white active:scale-95 transition"
+        title="Night Debrief"
+      >
+        <Moon className="w-4 h-4 fill-indigo-400/20" />
+      </button>
+    )}
 
-          {/* 🤖 Talk to SARTHI Voice Assistant Trigger */}
-          {isMounted && (
-            <button
-              onClick={() => setIsVoiceAssistantOpen(true)}
-              className="p-2 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500 hover:text-black active:scale-95 transition shadow-sm"
-              title="Talk to SARTHI (Voice Assistant)"
-            >
-              <Bot className="w-4 h-4" />
-            </button>
-          )}
+    {/* 🤖 Voice Assistant */}
+    {isMounted && (
+      <button
+        onClick={() => setIsVoiceAssistantOpen(true)}
+        className="p-2 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500 hover:text-black active:scale-95 transition"
+        title="Talk to SARTHI"
+      >
+        <Bot className="w-4 h-4" />
+      </button>
+    )}
 
-          {isMounted && (
-            <button
-              onClick={() => setIsClipOpen(true)}
-              className="relative p-2 rounded-full bg-neutral-900 border border-white/10 text-neutral-300 hover:text-white active:scale-95 transition"
-              title="Instant Drop Clipboard (Phone ↔ Laptop)"
-            >
-              <Clipboard className="w-4 h-4 text-emerald-400" />
-              {clipItems.length > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 text-black text-[9px] font-black flex items-center justify-center">
-                  {clipItems.length}
-                </span>
-              )}
-            </button>
-          )}
+    {/* 📋 Instant Drop Clipboard */}
+    {isMounted && (
+      <button
+        onClick={() => setIsClipOpen(true)}
+        className="relative p-2 rounded-full bg-neutral-900 border border-white/10 text-neutral-300 hover:text-white active:scale-95 transition"
+        title="Instant Drop Clipboard"
+      >
+        <Clipboard className="w-4 h-4 text-emerald-400" />
+        {clipItems.length > 0 && (
+          <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 text-black text-[8px] font-black flex items-center justify-center">
+            {clipItems.length}
+          </span>
+        )}
+      </button>
+    )}
 
-          {isMounted && (
-            <button 
-              onClick={() => setIsCommandOpen(true)}
-              className="p-2 rounded-full bg-neutral-900 border border-white/10 text-neutral-400 hover:text-white active:scale-95 transition"
-              title="Ctrl + K Command Palette"
-            >
-              <Command className="w-4 h-4 text-amber-400" />
-            </button>
-          )}
+    {/* 🔔 Notification Bell (Sirf tab dikhega jab notifications off hon) */}
+    {!notificationsAllowed && (
+      <button 
+        onClick={handleNotificationClick}
+        className="p-2 rounded-full bg-neutral-900 border border-amber-500/30 text-amber-400 animate-pulse active:scale-95 transition"
+        title="Enable Alerts"
+      >
+        <Bell className="w-4 h-4" />
+      </button>
+    )}
 
-          <button 
-            onClick={handleNotificationClick}
-            className={`p-2 rounded-full border transition active:scale-95 ${
-              notificationsAllowed 
-                ? 'bg-neutral-900 border-white/10 text-emerald-400 hover:text-emerald-300' 
-                : 'bg-neutral-900 border-amber-500/30 text-amber-400 animate-pulse'
-            }`}
-            title="Click to Test / Enable Alerts"
-          >
-            <Bell className="w-4 h-4" />
-          </button>
-
-          <div className="flex items-center gap-1 bg-neutral-900/80 backdrop-blur-md border border-white/10 px-2.5 py-1.5 rounded-full text-xs">
-            <Flame className="w-3.5 h-3.5 text-orange-500 fill-orange-500" />
-            <span className="font-semibold text-white">{sortedTodayTasks.filter(t => t.is_completed).length}</span>
-            <span className="text-neutral-500">/{sortedTodayTasks.length}</span>
+    {/* 🛡️ Streak & Shield Unified Capsule */}
+    <div 
+      onClick={() => triggerBanner('Streak Status 🔥', `${sortedTodayTasks.filter(t => t.is_completed).length}/${sortedTodayTasks.length} tasks done. Active Shields: ${streakShields}`, 'info')}
+      className="flex items-center gap-1.5 bg-neutral-900/90 border border-white/10 px-2.5 py-1.5 rounded-full text-xs font-mono cursor-pointer active:scale-95 transition"
+    >
+      <div className="flex items-center gap-1">
+        <Flame className="w-3.5 h-3.5 text-orange-500 fill-orange-500" />
+        <span className="font-bold text-white">{sortedTodayTasks.filter(t => t.is_completed).length}</span>
+        <span className="text-neutral-500 text-[10px]">/{sortedTodayTasks.length}</span>
+      </div>
+      {streakShields > 0 && (
+        <>
+          <span className="text-neutral-600 font-sans">•</span>
+          <div className="flex items-center gap-0.5 text-amber-400 text-[10px] font-bold">
+            <Shield className="w-3 h-3 fill-amber-400/20" />
+            <span>{streakShields}</span>
           </div>
-        </div>
-      </header>
+        </>
+      )}
+    </div>
+  </div>
+</header>
 
       {/* 🧠 Autonomous Daily Intel + RPG XP Card */}
       <div className="mb-4">
