@@ -9,6 +9,7 @@ import { UniversalInput } from '@/components/UniversalInput';
 import { InstantDropModal, ClipItem } from '@/components/InstantDropModal';
 import { BikeVaultCard } from '@/components/BikeVaultCard';
 import { MoneyRadarCard } from '@/components/MoneyRadarCard';
+import { NightDebriefModal } from '@/components/NightDebriefModal';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -41,7 +42,9 @@ import {
   Clipboard,
   Receipt,
   Film,
-  Bot
+  Bot,
+  Shield,
+  Moon
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -90,7 +93,6 @@ const CLIP_PREFIX = '__CLIP__:';
 const KHARCHA_TAG = '[KHARCHA]';
 const BIKE_TAG = '[BIKE_SAVING]';
 
-// 🎬 Creator Pipeline Stages
 const CREATOR_STAGES = [
   { key: 'IDEA', label: '💡 Idea', color: 'bg-purple-500/15 text-purple-300 border-purple-500/30' },
   { key: 'SHOOT', label: '🎥 Shoot / Code', color: 'bg-blue-500/15 text-blue-300 border-blue-500/30' },
@@ -124,8 +126,29 @@ export default function Home() {
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [isClipOpen, setIsClipOpen] = useState(false);
   const [isVoiceAssistantOpen, setIsVoiceAssistantOpen] = useState(false);
+  const [isNightDebriefOpen, setIsNightDebriefOpen] = useState(false);
   const [focusTask, setFocusTask] = useState<Task | null>(null);
   const universalInputRef = useRef<HTMLInputElement>(null);
+
+  // 🛡️ Streak Freeze Shields (Saved in localStorage)
+  const [streakShields, setStreakShields] = useState<number>(1);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedShields = localStorage.getItem('sarthi_streak_shields');
+      if (savedShields !== null) {
+        setStreakShields(parseInt(savedShields, 10));
+      }
+    }
+  }, []);
+
+  const updateStreakShields = (count: number) => {
+    const finalCount = Math.max(0, Math.min(2, count));
+    setStreakShields(finalCount);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sarthi_streak_shields', String(finalCount));
+    }
+  };
 
   useEffect(() => {
     const handleGlobalShortcuts = (e: KeyboardEvent) => {
@@ -756,10 +779,6 @@ export default function Home() {
       }));
   }, [khaataRecords]);
 
-  const totalBikeSaved = useMemo(() => {
-    return bikeSavingLogs.reduce((acc, cur) => acc + Number(cur.amount), 0);
-  }, [bikeSavingLogs]);
-
   const handleAddBikeSaving = async (amount: number, sourceNote: string) => {
     const newRecord: KhaataRecord = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'bike_' + Date.now(),
@@ -958,28 +977,65 @@ export default function Home() {
 
   const todayStr = useMemo(() => getDeviceDate(), []);
 
+  // 📅 Current Month String (e.g. "Nov 2026") & Prefix ("2026-11")
+  const currentMonthKey = useMemo(() => todayStr.slice(0, 7), [todayStr]);
+  const currentMonthName = useMemo(() => {
+    return new Date().toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+  }, []);
+
   const ledgerOnlyRecords = useMemo(() => {
     return khaataRecords.filter(r => !r.note?.startsWith(BIKE_TAG));
   }, [khaataRecords]);
 
-  const totalLenaHai = useMemo(() => {
+  // ALL-TIME Totals
+  const allTimeLena = useMemo(() => {
     return ledgerOnlyRecords
       .filter(r => r.type === 'lena' && !r.is_settled && !r.note?.startsWith(KHARCHA_TAG))
       .reduce((acc, cur) => acc + Number(cur.amount), 0);
   }, [ledgerOnlyRecords]);
 
-  const totalDenaHai = useMemo(() => {
+  const allTimeDena = useMemo(() => {
     return ledgerOnlyRecords
       .filter(r => r.type === 'dena' && !r.is_settled && !r.note?.startsWith(KHARCHA_TAG))
       .reduce((acc, cur) => acc + Number(cur.amount), 0);
   }, [ledgerOnlyRecords]);
 
-  const totalKharcha = useMemo(() => {
+  const allTimeKharcha = useMemo(() => {
     return ledgerOnlyRecords
       .filter(r => r.note?.startsWith(KHARCHA_TAG) && !r.is_settled)
       .reduce((acc, cur) => acc + Number(cur.amount), 0);
   }, [ledgerOnlyRecords]);
 
+  const allTimeBikeSaved = useMemo(() => {
+    return bikeSavingLogs.reduce((acc, cur) => acc + Number(cur.amount), 0);
+  }, [bikeSavingLogs]);
+
+  // 🗓️ THIS MONTH Renewed Totals
+  const monthLena = useMemo(() => {
+    return ledgerOnlyRecords
+      .filter(r => r.type === 'lena' && !r.is_settled && !r.note?.startsWith(KHARCHA_TAG) && r.due_date?.startsWith(currentMonthKey))
+      .reduce((acc, cur) => acc + Number(cur.amount), 0);
+  }, [ledgerOnlyRecords, currentMonthKey]);
+
+  const monthDena = useMemo(() => {
+    return ledgerOnlyRecords
+      .filter(r => r.type === 'dena' && !r.is_settled && !r.note?.startsWith(KHARCHA_TAG) && r.due_date?.startsWith(currentMonthKey))
+      .reduce((acc, cur) => acc + Number(cur.amount), 0);
+  }, [ledgerOnlyRecords, currentMonthKey]);
+
+  const monthKharcha = useMemo(() => {
+    return ledgerOnlyRecords
+      .filter(r => r.note?.startsWith(KHARCHA_TAG) && !r.is_settled && r.due_date?.startsWith(currentMonthKey))
+      .reduce((acc, cur) => acc + Number(cur.amount), 0);
+  }, [ledgerOnlyRecords, currentMonthKey]);
+
+  const monthBikeSaved = useMemo(() => {
+    return bikeSavingLogs
+      .filter(r => r.date?.startsWith(currentMonthKey))
+      .reduce((acc, cur) => acc + Number(cur.amount), 0);
+  }, [bikeSavingLogs, currentMonthKey]);
+
+  // Tasks & Debrief Handlers
   const sortedTodayTasks = useMemo(() => {
     const list = tasks.filter(t => t.target_date === todayStr);
     return list.sort((a, b) => {
@@ -989,6 +1045,67 @@ export default function Home() {
       return 0;
     });
   }, [tasks, todayStr]);
+
+  const todayPendingTasks = useMemo(() => {
+    return sortedTodayTasks.filter(t => !t.is_completed);
+  }, [sortedTodayTasks]);
+
+  const todayCompletedTasks = useMemo(() => {
+    return sortedTodayTasks.filter(t => t.is_completed);
+  }, [sortedTodayTasks]);
+
+  const todayBikeDeposit = useMemo(() => {
+    return bikeSavingLogs
+      .filter(r => r.date === todayStr)
+      .reduce((acc, cur) => acc + Number(cur.amount), 0);
+  }, [bikeSavingLogs, todayStr]);
+
+  const todayKharchaAmount = useMemo(() => {
+    return ledgerOnlyRecords
+      .filter(r => r.note?.startsWith(KHARCHA_TAG) && !r.is_settled && r.due_date === todayStr)
+      .reduce((acc, cur) => acc + Number(cur.amount), 0);
+  }, [ledgerOnlyRecords, todayStr]);
+
+  // Kal Ka Auto-Planner (Shift uncompleted tasks to tomorrow)
+  const handleRolloverTasksToTomorrow = async () => {
+    const tomorrowDate = new Date();
+    tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+    const tomorrowStr = tomorrowDate.toISOString().split('T')[0];
+
+    const updated = tasks.map(t => {
+      if (t.target_date === todayStr && !t.is_completed) {
+        return {
+          ...t,
+          target_date: tomorrowStr,
+          carry_forward_count: (t.carry_forward_count || 0) + 1,
+        };
+      }
+      return t;
+    });
+
+    saveTasksState(updated);
+    triggerBanner('Auto-Planned! 🌙', `${todayPendingTasks.length} tasks kal ke liye schedule ho gaye.`, 'success');
+
+    for (const t of todayPendingTasks) {
+      if (navigator.onLine) {
+        await supabase
+          .from('tasks')
+          .update({
+            target_date: tomorrowStr,
+            carry_forward_count: (t.carry_forward_count || 0) + 1,
+          })
+          .eq('id', t.id);
+      } else {
+        enqueueOfflineAction({
+          id: t.id,
+          type: 'update',
+          table: 'tasks',
+          payload: { target_date: tomorrowStr, carry_forward_count: (t.carry_forward_count || 0) + 1 },
+          matchId: t.id,
+        });
+      }
+    }
+  };
 
   const upcomingTasks = tasks.filter(t => t.target_date > todayStr);
   const historyTasks = tasks.filter(t => t.is_completed);
@@ -1021,6 +1138,7 @@ export default function Home() {
         </div>
       )}
 
+      {/*  Top App Header with Streak Shield & Night Debrief Triggers */}
       <header className="flex justify-between items-center mb-5">
         <div>
           <span className="text-[10px] font-bold tracking-widest uppercase text-amber-500">Autonomous Assistant</span>
@@ -1031,6 +1149,33 @@ export default function Home() {
             <div className="flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2.5 py-1 rounded-full text-[10px] font-bold">
               <WifiOff className="w-3 h-3" /> Offline
             </div>
+          )}
+
+          {/* 🛡️ Streak Freeze Shield Counter */}
+          {isMounted && (
+            <button
+              onClick={() => triggerBanner('Streak Shield 🛡️', `Aapke pass ${streakShields} freeze shields hain. Busy days me streak drop nahi hogi.`, 'info')}
+              className={`flex items-center gap-1 px-2 py-1.5 rounded-full border text-[10px] font-mono font-bold transition active:scale-95 ${
+                streakShields > 0
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                  : 'bg-neutral-900 border-white/10 text-neutral-500'
+              }`}
+              title="Streak Freeze Shields (Anti-Drop Insurance)"
+            >
+              <Shield className="w-3 h-3 fill-amber-400/20" />
+              <span>x{streakShields}</span>
+            </button>
+          )}
+
+          {/* 🌙 Night Debrief / Close Day Trigger */}
+          {isMounted && (
+            <button
+              onClick={() => setIsNightDebriefOpen(true)}
+              className="p-2 rounded-full bg-neutral-900 border border-white/10 text-indigo-400 hover:text-white active:scale-95 transition"
+              title="Night Debrief & Kal Ka Auto-Planner"
+            >
+              <Moon className="w-4 h-4 fill-indigo-400/20" />
+            </button>
           )}
 
           {/* 🤖 Talk to SARTHI Voice Assistant Trigger */}
@@ -1089,6 +1234,7 @@ export default function Home() {
         </div>
       </header>
 
+      {/* 🧠 Autonomous Daily Intel + RPG XP Card */}
       <div className="mb-4">
         <DailyIntelCard
           tasks={tasks}
@@ -1098,6 +1244,7 @@ export default function Home() {
         />
       </div>
 
+      {/* ⚡ Smart Universal Input Bar */}
       <div className="mb-5">
         <UniversalInput
           inputRef={universalInputRef}
@@ -1153,6 +1300,7 @@ export default function Home() {
         />
       </div>
 
+      {/*  Module Switcher */}
       <div className="grid grid-cols-3 bg-neutral-900/90 p-1 rounded-2xl border border-white/10 text-xs font-semibold mb-5">
         <button
           onClick={() => setCurrentModule('routine')}
@@ -1180,6 +1328,7 @@ export default function Home() {
         </button>
       </div>
 
+      {/* MODULE 1: ROUTINE */}
       {currentModule === 'routine' && (
         <>
           <div className="grid grid-cols-3 bg-neutral-950 p-1 rounded-xl border border-white/5 text-[11px] font-semibold mb-5">
@@ -1548,11 +1697,17 @@ export default function Home() {
             onDeleteSaving={deleteKhaataRecord}
           />
 
+          {/* 📊 Monthly Renewed Money Radar */}
           <MoneyRadarCard
-            totalBikeSaved={totalBikeSaved}
-            totalKharcha={totalKharcha}
-            totalLena={totalLenaHai}
-            totalDena={totalDenaHai}
+            currentMonthName={currentMonthName}
+            monthBikeSaved={monthBikeSaved}
+            monthKharcha={monthKharcha}
+            monthLena={monthLena}
+            monthDena={monthDena}
+            allTimeBikeSaved={allTimeBikeSaved}
+            allTimeKharcha={allTimeKharcha}
+            allTimeLena={allTimeLena}
+            allTimeDena={allTimeDena}
           />
 
           <div className="grid grid-cols-3 gap-2">
@@ -1565,7 +1720,7 @@ export default function Home() {
               <div className="flex items-center gap-1 text-emerald-400 text-[10px] font-bold mb-1">
                 <ArrowDownLeft className="w-3.5 h-3.5" /> Lena Hai
               </div>
-              <span className="text-sm font-mono font-bold text-white">₹{totalLenaHai}</span>
+              <span className="text-sm font-mono font-bold text-white">₹{allTimeLena}</span>
             </div>
 
             <div 
@@ -1577,7 +1732,7 @@ export default function Home() {
               <div className="flex items-center gap-1 text-rose-400 text-[10px] font-bold mb-1">
                 <ArrowUpRight className="w-3.5 h-3.5" /> Dena Hai
               </div>
-              <span className="text-sm font-mono font-bold text-white">₹{totalDenaHai}</span>
+              <span className="text-sm font-mono font-bold text-white">₹{allTimeDena}</span>
             </div>
 
             <div 
@@ -1589,7 +1744,7 @@ export default function Home() {
               <div className="flex items-center gap-1 text-amber-400 text-[10px] font-bold mb-1">
                 <Receipt className="w-3.5 h-3.5" /> Kharcha
               </div>
-              <span className="text-sm font-mono font-bold text-amber-400">₹{totalKharcha}</span>
+              <span className="text-sm font-mono font-bold text-amber-400">₹{allTimeKharcha}</span>
             </div>
           </div>
 
@@ -1658,7 +1813,7 @@ export default function Home() {
               <span className="text-[10px] text-neutral-400 font-mono">Tap card above to switch</span>
             </div>
 
-            {khaataRecords.filter(r => {
+            {ledgerOnlyRecords.filter(r => {
               const isKharcha = r.note?.startsWith(KHARCHA_TAG);
               if (khaataType === 'kharcha') return isKharcha && !r.is_settled;
               return !isKharcha && r.type === khaataType && !r.is_settled;
@@ -1667,7 +1822,7 @@ export default function Home() {
                 <p className="text-xs text-neutral-500">Is category me koi active record nahi hai!</p>
               </div>
             ) : (
-              khaataRecords
+              ledgerOnlyRecords
                 .filter(r => {
                   const isKharcha = r.note?.startsWith(KHARCHA_TAG);
                   if (khaataType === 'kharcha') return isKharcha && !r.is_settled;
@@ -1837,7 +1992,7 @@ export default function Home() {
                     type="date" 
                     value={editingKhaata.due_date || ''} 
                     onChange={(e) => setEditingKhaata({ ...editingKhaata, due_date: e.target.value || null })}
-                    className="w-full bg-black/60 border border-white/10 rounded-xl px-2.5 py-2 text-white text-xs focus:outline-none"
+                    className="w-full bg-black/60 border border-white/10 rounded-xl px-2 py-2 text-white text-xs focus:outline-none"
                   />
                 </div>
               </div>
@@ -2006,6 +2161,24 @@ export default function Home() {
           setKhaataRecords([newRecord, ...khaataRecords]);
           if (navigator.onLine) await supabase.from('khaata_records').insert([newRecord]);
           else enqueueOfflineAction({ id: newRecord.id, type: 'insert', table: 'khaata_records', payload: newRecord });
+        }}
+      />
+
+      {/* 🌙 Night Debrief & Kal Ka Auto-Planner Modal */}
+      <NightDebriefModal
+        isOpen={isNightDebriefOpen}
+        onClose={() => setIsNightDebriefOpen(false)}
+        pendingTasks={todayPendingTasks}
+        completedCount={todayCompletedTasks.length}
+        totalCount={sortedTodayTasks.length}
+        todayBikeSaved={todayBikeDeposit}
+        todayKharcha={todayKharchaAmount}
+        streakCount={9}
+        streakShields={streakShields}
+        onRolloverTasksToTomorrow={handleRolloverTasksToTomorrow}
+        onUseStreakShield={() => {
+          updateStreakShields(streakShields - 1);
+          triggerBanner('Shield Consumed 🛡️', 'Aaj ka streak secure kar diya gaya hai!', 'success');
         }}
       />
 
