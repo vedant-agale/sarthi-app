@@ -130,7 +130,6 @@ export default function Home() {
   const [focusTask, setFocusTask] = useState<Task | null>(null);
   const universalInputRef = useRef<HTMLInputElement>(null);
 
-  // 🛡️ Streak Freeze Shields (Saved in localStorage)
   const [streakShields, setStreakShields] = useState<number>(1);
 
   useEffect(() => {
@@ -215,7 +214,12 @@ export default function Home() {
     setTimeout(() => setBanner(null), 4500);
   };
 
-  const isProtectedTask = (task: Task) => DEFAULT_CATEGORIES.includes(task.category);
+  // Duplicate Check: agar category duplicate hai to extra ko delete allow karo
+  const isProtectedTask = (task: Task) => {
+    if (!DEFAULT_CATEGORIES.includes(task.category)) return false;
+    const count = tasks.filter(t => t.category === task.category && t.target_date === task.target_date).length;
+    return count <= 1;
+  };
 
   const isCreatorTask = (task: Task) => {
     const cat = task.category.toLowerCase();
@@ -402,9 +406,36 @@ export default function Home() {
     }
   };
 
+  // Auto-deduplication & Smart Lifecycle Engine
   const processDailyLifecycle = async (allTasks: Task[]) => {
     const today = getDeviceDate();
-    const overdueTasks = allTasks.filter(t => !t.is_completed && t.target_date < today);
+
+    // 1. Database Cleanup: Duplicate default tasks ko delete karna
+    const todaysTasks = allTasks.filter(t => t.target_date === today);
+    const seenCategories = new Set<string>();
+    const duplicateIdsToDelete: string[] = [];
+
+    todaysTasks.forEach(t => {
+      if (DEFAULT_CATEGORIES.includes(t.category)) {
+        if (seenCategories.has(t.category)) {
+          duplicateIdsToDelete.push(t.id);
+        } else {
+          seenCategories.add(t.category);
+        }
+      }
+    });
+
+    if (duplicateIdsToDelete.length > 0) {
+      await supabase.from('tasks').delete().in('id', duplicateIdsToDelete);
+      allTasks = allTasks.filter(t => !duplicateIdsToDelete.includes(t.id));
+      saveTasksState(allTasks);
+    }
+
+    // 2. Sirf Custom / Personal tasks ko carry-forward karna (Defaults roz fresh aate hain)
+    const overdueTasks = allTasks.filter(
+      t => !t.is_completed && t.target_date < today && !DEFAULT_CATEGORIES.includes(t.category)
+    );
+
     if (overdueTasks.length > 0) {
       for (const t of overdueTasks) {
         await supabase
@@ -414,9 +445,13 @@ export default function Home() {
       }
     }
 
-    const todaysTasks = allTasks.filter(t => t.target_date === today);
+    // 3. Agar aaj ke din koi mandatory routine missing ho tabhi insert karna
+    const currentTodayCategories = new Set(
+      allTasks.filter(t => t.target_date === today).map(t => t.category)
+    );
+
     const missingDefaults = DEFAULT_ROUTINES.filter(
-      def => !todaysTasks.some(t => t.title.toLowerCase().includes(def.title.toLowerCase().slice(0, 8)))
+      def => !currentTodayCategories.has(def.category)
     );
 
     if (missingDefaults.length > 0) {
@@ -427,7 +462,10 @@ export default function Home() {
         is_completed: false,
         carry_forward_count: 0
       }));
-      await supabase.from('tasks').insert(entries);
+      const { data } = await supabase.from('tasks').insert(entries).select();
+      if (data) {
+        saveTasksState([...allTasks, ...data]);
+      }
     }
   };
 
@@ -446,7 +484,7 @@ export default function Home() {
       if (sRes.data) setShoppingItems(sRes.data);
       if (kRes.data) setKhaataRecords(kRes.data);
     } catch {
-      // Gracefully silent when offline
+      // Offline fallback
     }
   };
 
@@ -767,7 +805,6 @@ export default function Home() {
     }
   };
 
-  // 🏍️ Dream Bike Saving Handlers
   const bikeSavingLogs = useMemo(() => {
     return khaataRecords
       .filter(r => r.note?.startsWith(BIKE_TAG))
@@ -801,7 +838,6 @@ export default function Home() {
     }
   };
 
-  // Khaata & Roz Ka Kharcha Operations
   const addKhaataEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!khaataName.trim() || !khaataAmount.trim()) {
@@ -977,7 +1013,6 @@ export default function Home() {
 
   const todayStr = useMemo(() => getDeviceDate(), []);
 
-  // 📅 Current Month String (e.g. "Nov 2026") & Prefix ("2026-11")
   const currentMonthKey = useMemo(() => todayStr.slice(0, 7), [todayStr]);
   const currentMonthName = useMemo(() => {
     return new Date().toLocaleString('en-IN', { month: 'short', year: 'numeric' });
@@ -1010,7 +1045,7 @@ export default function Home() {
     return bikeSavingLogs.reduce((acc, cur) => acc + Number(cur.amount), 0);
   }, [bikeSavingLogs]);
 
-  // 🗓️ THIS MONTH Renewed Totals
+  // THIS MONTH Totals
   const monthLena = useMemo(() => {
     return ledgerOnlyRecords
       .filter(r => r.type === 'lena' && !r.is_settled && !r.note?.startsWith(KHARCHA_TAG) && r.due_date?.startsWith(currentMonthKey))
@@ -1035,10 +1070,22 @@ export default function Home() {
       .reduce((acc, cur) => acc + Number(cur.amount), 0);
   }, [bikeSavingLogs, currentMonthKey]);
 
-  // Tasks & Debrief Handlers
+  // UI Deduplication Filter for Today's Focus List
   const sortedTodayTasks = useMemo(() => {
     const list = tasks.filter(t => t.target_date === todayStr);
-    return list.sort((a, b) => {
+
+    const seenDefault = new Set<string>();
+    const dedupedList: Task[] = [];
+
+    for (const t of list) {
+      if (DEFAULT_CATEGORIES.includes(t.category)) {
+        if (seenDefault.has(t.category)) continue;
+        seenDefault.add(t.category);
+      }
+      dedupedList.push(t);
+    }
+
+    return dedupedList.sort((a, b) => {
       if (a.is_completed !== b.is_completed) {
         return a.is_completed ? 1 : -1;
       }
@@ -1066,7 +1113,7 @@ export default function Home() {
       .reduce((acc, cur) => acc + Number(cur.amount), 0);
   }, [ledgerOnlyRecords, todayStr]);
 
-  // Kal Ka Auto-Planner (Shift uncompleted tasks to tomorrow)
+  // Kal Ka Auto-Planner
   const handleRolloverTasksToTomorrow = async () => {
     const tomorrowDate = new Date();
     tomorrowDate.setDate(tomorrowDate.getDate() + 1);
@@ -1138,93 +1185,93 @@ export default function Home() {
         </div>
       )}
 
-      {/*  Top App Header with Streak Shield & Night Debrief Triggers */}
-     <header className="flex justify-between items-center mb-5">
-  <div>
-    <span className="text-[10px] font-bold tracking-widest uppercase text-amber-500">Autonomous Assistant</span>
-    <h1 className="text-2xl font-black tracking-tight text-white">SARTHI</h1>
-  </div>
+      {/* Decluttered Header */}
+      <header className="flex justify-between items-center mb-5">
+        <div>
+          <span className="text-[10px] font-bold tracking-widest uppercase text-amber-500">Autonomous Assistant</span>
+          <h1 className="text-2xl font-black tracking-tight text-white">SARTHI</h1>
+        </div>
 
-  <div className="flex items-center gap-1.5">
-    {!isOnline && (
-      <div className="flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-1 rounded-full text-[10px] font-bold">
-        <WifiOff className="w-3 h-3" />
-      </div>
-    )}
+        <div className="flex items-center gap-1.5">
+          {!isOnline && (
+            <div className="flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2.5 py-1 rounded-full text-[10px] font-bold">
+              <WifiOff className="w-3 h-3" />
+            </div>
+          )}
 
-    {/* 🌙 Night Debrief (Sirf Shaam 8 PM ke baad dikhega) */}
-    {isMounted && currentTime.getHours() >= 20 && (
-      <button
-        onClick={() => setIsNightDebriefOpen(true)}
-        className="p-2 rounded-full bg-neutral-900 border border-white/10 text-indigo-400 hover:text-white active:scale-95 transition"
-        title="Night Debrief"
-      >
-        <Moon className="w-4 h-4 fill-indigo-400/20" />
-      </button>
-    )}
+          {/* 🌙 Night Debrief (Sirf Shaam 8 PM ke baad appear hoga) */}
+          {isMounted && currentTime.getHours() >= 20 && (
+            <button
+              onClick={() => setIsNightDebriefOpen(true)}
+              className="p-2 rounded-full bg-neutral-900 border border-white/10 text-indigo-400 hover:text-white active:scale-95 transition"
+              title="Night Debrief"
+            >
+              <Moon className="w-4 h-4 fill-indigo-400/20" />
+            </button>
+          )}
 
-    {/* 🤖 Voice Assistant */}
-    {isMounted && (
-      <button
-        onClick={() => setIsVoiceAssistantOpen(true)}
-        className="p-2 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500 hover:text-black active:scale-95 transition"
-        title="Talk to SARTHI"
-      >
-        <Bot className="w-4 h-4" />
-      </button>
-    )}
+          {/* 🤖 Voice Assistant */}
+          {isMounted && (
+            <button
+              onClick={() => setIsVoiceAssistantOpen(true)}
+              className="p-2 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500 hover:text-black active:scale-95 transition shadow-sm"
+              title="Talk to SARTHI"
+            >
+              <Bot className="w-4 h-4" />
+            </button>
+          )}
 
-    {/* 📋 Instant Drop Clipboard */}
-    {isMounted && (
-      <button
-        onClick={() => setIsClipOpen(true)}
-        className="relative p-2 rounded-full bg-neutral-900 border border-white/10 text-neutral-300 hover:text-white active:scale-95 transition"
-        title="Instant Drop Clipboard"
-      >
-        <Clipboard className="w-4 h-4 text-emerald-400" />
-        {clipItems.length > 0 && (
-          <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 text-black text-[8px] font-black flex items-center justify-center">
-            {clipItems.length}
-          </span>
-        )}
-      </button>
-    )}
+          {/* 📋 Instant Drop Clipboard */}
+          {isMounted && (
+            <button
+              onClick={() => setIsClipOpen(true)}
+              className="relative p-2 rounded-full bg-neutral-900 border border-white/10 text-neutral-300 hover:text-white active:scale-95 transition"
+              title="Instant Drop Clipboard"
+            >
+              <Clipboard className="w-4 h-4 text-emerald-400" />
+              {clipItems.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 text-black text-[8px] font-black flex items-center justify-center">
+                  {clipItems.length}
+                </span>
+              )}
+            </button>
+          )}
 
-    {/* 🔔 Notification Bell (Sirf tab dikhega jab notifications off hon) */}
-    {!notificationsAllowed && (
-      <button 
-        onClick={handleNotificationClick}
-        className="p-2 rounded-full bg-neutral-900 border border-amber-500/30 text-amber-400 animate-pulse active:scale-95 transition"
-        title="Enable Alerts"
-      >
-        <Bell className="w-4 h-4" />
-      </button>
-    )}
+          {/* 🔔 Notification Bell (Sirf tab dikhega jab off ho) */}
+          {!notificationsAllowed && (
+            <button 
+              onClick={handleNotificationClick}
+              className="p-2 rounded-full bg-neutral-900 border border-amber-500/30 text-amber-400 animate-pulse active:scale-95 transition"
+              title="Enable Alerts"
+            >
+              <Bell className="w-4 h-4" />
+            </button>
+          )}
 
-    {/* 🛡️ Streak & Shield Unified Capsule */}
-    <div 
-      onClick={() => triggerBanner('Streak Status 🔥', `${sortedTodayTasks.filter(t => t.is_completed).length}/${sortedTodayTasks.length} tasks done. Active Shields: ${streakShields}`, 'info')}
-      className="flex items-center gap-1.5 bg-neutral-900/90 border border-white/10 px-2.5 py-1.5 rounded-full text-xs font-mono cursor-pointer active:scale-95 transition"
-    >
-      <div className="flex items-center gap-1">
-        <Flame className="w-3.5 h-3.5 text-orange-500 fill-orange-500" />
-        <span className="font-bold text-white">{sortedTodayTasks.filter(t => t.is_completed).length}</span>
-        <span className="text-neutral-500 text-[10px]">/{sortedTodayTasks.length}</span>
-      </div>
-      {streakShields > 0 && (
-        <>
-          <span className="text-neutral-600 font-sans">•</span>
-          <div className="flex items-center gap-0.5 text-amber-400 text-[10px] font-bold">
-            <Shield className="w-3 h-3 fill-amber-400/20" />
-            <span>{streakShields}</span>
+          {/* 🛡️ Streak & Shield Unified Capsule */}
+          <div 
+            onClick={() => triggerBanner('Streak Status 🔥', `${sortedTodayTasks.filter(t => t.is_completed).length}/${sortedTodayTasks.length} tasks done. Active Shields: ${streakShields}`, 'info')}
+            className="flex items-center gap-1.5 bg-neutral-900/90 border border-white/10 px-2.5 py-1.5 rounded-full text-xs font-mono cursor-pointer active:scale-95 transition"
+          >
+            <div className="flex items-center gap-1">
+              <Flame className="w-3.5 h-3.5 text-orange-500 fill-orange-500" />
+              <span className="font-bold text-white">{sortedTodayTasks.filter(t => t.is_completed).length}</span>
+              <span className="text-neutral-500 text-[10px]">/{sortedTodayTasks.length}</span>
+            </div>
+            {streakShields > 0 && (
+              <>
+                <span className="text-neutral-600 font-sans">•</span>
+                <div className="flex items-center gap-0.5 text-amber-400 text-[10px] font-bold">
+                  <Shield className="w-3 h-3 fill-amber-400/20" />
+                  <span>{streakShields}</span>
+                </div>
+              </>
+            )}
           </div>
-        </>
-      )}
-    </div>
-  </div>
-</header>
+        </div>
+      </header>
 
-      {/* 🧠 Autonomous Daily Intel + RPG XP Card */}
+      {/* Daily Intel + RPG XP Card */}
       <div className="mb-4">
         <DailyIntelCard
           tasks={tasks}
@@ -1234,7 +1281,7 @@ export default function Home() {
         />
       </div>
 
-      {/* ⚡ Smart Universal Input Bar */}
+      {/* Smart Universal Input Bar */}
       <div className="mb-5">
         <UniversalInput
           inputRef={universalInputRef}
@@ -1290,7 +1337,7 @@ export default function Home() {
         />
       </div>
 
-      {/*  Module Switcher */}
+      {/* Module Switcher */}
       <div className="grid grid-cols-3 bg-neutral-900/90 p-1 rounded-2xl border border-white/10 text-xs font-semibold mb-5">
         <button
           onClick={() => setCurrentModule('routine')}
@@ -1612,6 +1659,7 @@ export default function Home() {
         </>
       )}
 
+      {/* MODULE 2: BAZAAR */}
       {currentModule === 'bazaar' && (
         <section className="space-y-4">
           <div className="flex items-center justify-between px-1">
@@ -1687,7 +1735,6 @@ export default function Home() {
             onDeleteSaving={deleteKhaataRecord}
           />
 
-          {/* 📊 Monthly Renewed Money Radar */}
           <MoneyRadarCard
             currentMonthName={currentMonthName}
             monthBikeSaved={monthBikeSaved}
@@ -2108,7 +2155,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🤖 SARTHI Conversational Voice Assistant Modal */}
+      {/* 🤖 SARTHI Voice Assistant Modal */}
       <VoiceAssistantModal
         isOpen={isVoiceAssistantOpen}
         onClose={() => setIsVoiceAssistantOpen(false)}
