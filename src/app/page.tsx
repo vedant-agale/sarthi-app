@@ -12,6 +12,8 @@ import { MoneyRadarCard } from '@/components/MoneyRadarCard';
 import { NightDebriefModal } from '@/components/NightDebriefModal';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { DeskHudModal } from '@/components/DeskHudModal';
+import { Monitor } from 'lucide-react';
 import { 
   Check, 
   Flame, 
@@ -120,6 +122,7 @@ const MANUAL_CATEGORIES = [
 ];
 
 export default function Home() {
+  const [isDeskHudOpen, setIsDeskHudOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => setIsMounted(true), []);
 
@@ -1210,6 +1213,17 @@ export default function Home() {
             </button>
           )}
 
+          {/* 🖥️ Standby Desk HUD Trigger */}
+{isMounted && (
+  <button
+    onClick={() => setIsDeskHudOpen(true)}
+    className="p-2 rounded-full bg-neutral-900 border border-white/10 text-neutral-400 hover:text-amber-400 hover:border-amber-500/30 active:scale-95 transition"
+    title="Standby Desk HUD (Ambient Clock & Focus)"
+  >
+    <Monitor className="w-4 h-4" />
+  </button>
+)}
+
           {/* 🤖 Voice Assistant */}
           {isMounted && (
             <button
@@ -2243,6 +2257,21 @@ export default function Home() {
         onCompleteTask={() => {
           if (focusTask) toggleGeneralTask(focusTask);
         }}
+      />
+
+
+      {/* 🖥️ Standby Desk HUD */}
+      <DeskHudModal
+        isOpen={isDeskHudOpen}
+        onClose={() => setIsDeskHudOpen(false)}
+        tasks={tasks}
+        todayStr={todayStr}
+        japCount={japCount}
+        streakCount={9}
+        streakShields={streakShields}
+        totalBikeSaved={allTimeBikeSaved}
+        onToggleTask={toggleGeneralTask}
+        onIncrementJap={handleJapIncrement}
       />
 
     </main>
